@@ -107,6 +107,7 @@ const ProcedureCard = ({ group, reviewData, onUpdateReview }) => {
 
 export default function App() {
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedModality, setSelectedModality] = useState('All');
   const [activeTab, setActiveTab] = useState('pending'); // 'pending' or 'finished'
   const [reviewsDB, setReviewsDB] = useState({});
   const [dbProcedures, setDbProcedures] = useState([]);
@@ -192,7 +193,7 @@ export default function App() {
     }
   };
 
-  const groupedData = useMemo(() => {
+  const { groupedData, availableModalities } = useMemo(() => {
     const groups = {};
     
     // Combine local code-based JSON with dynamically fetched DB procedures
@@ -201,8 +202,13 @@ export default function App() {
     dbProcedures.forEach(item => combinedMap.set(item.Procedure, item));
     
     const combinedData = Array.from(combinedMap.values());
-
+    const mods = new Set();
+    
     combinedData.forEach(item => {
+      if (item.ModalityId !== undefined && item.ModalityId !== null) {
+        mods.add(item.ModalityId);
+      }
+      
       const isCR = item.Procedure.endsWith('_CR');
       let baseName = item.Procedure.replace(/_CR$|_SCH$/, '');
 
@@ -223,14 +229,24 @@ export default function App() {
       }
     });
 
-    return Object.values(groups).filter(group => {
+    const filtered = Object.values(groups).filter(group => {
       const term = searchTerm.toLowerCase();
       const inBaseName = group.baseName.toLowerCase().includes(term);
-      const inSch = group.schItem && group.schItem.Scheduling_x0020_Instructions.toLowerCase().includes(term);
-      const inCr = group.crItem && group.crItem.Scheduling_x0020_Instructions.toLowerCase().includes(term);
-      return inBaseName || inSch || inCr;
+      // use optional chaining because this can sometimes be null
+      const inSch = group.schItem && group.schItem.Scheduling_x0020_Instructions?.toLowerCase().includes(term);
+      const inCr = group.crItem && group.crItem.Scheduling_x0020_Instructions?.toLowerCase().includes(term);
+      const matchesSearch = inBaseName || inSch || inCr;
+      
+      const matchesModality = selectedModality === 'All' || group.ModalityId?.toString() === selectedModality;
+
+      return matchesSearch && matchesModality;
     });
-  }, [searchTerm]);
+
+    return {
+      groupedData: filtered,
+      availableModalities: Array.from(mods).sort()
+    };
+  }, [searchTerm, selectedModality, dbProcedures]);
 
   const displayedData = useMemo(() => {
     return groupedData.filter(group => {
@@ -304,13 +320,27 @@ export default function App() {
         </div>
       </div>
 
-      <input
-        type="text"
-        className="search-bar"
-        placeholder="Filter procedures or instructions..."
-        value={searchTerm}
-        onChange={(e) => setSearchTerm(e.target.value)}
-      />
+      <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem' }}>
+        <input
+          type="text"
+          className="search-bar"
+          placeholder="Filter procedures or instructions..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          style={{ marginBottom: 0, flex: 1 }}
+        />
+        <select 
+          className="search-bar"
+          value={selectedModality}
+          onChange={(e) => setSelectedModality(e.target.value)}
+          style={{ marginBottom: 0, width: 'auto', minWidth: '150px', cursor: 'pointer' }}
+        >
+          <option value="All">All Modalities</option>
+          {availableModalities.map(modId => (
+            <option key={modId} value={modId}>Modality {modId}</option>
+          ))}
+        </select>
+      </div>
 
       <div className="tabs" style={{ marginBottom: '1.5rem' }}>
         <div
