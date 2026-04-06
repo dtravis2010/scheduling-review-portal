@@ -65,10 +65,45 @@ export default function App() {
     );
   }, [searchTerm]);
 
+  const exportCommentsToCSV = () => {
+    let csvContent = "Procedure,Comment\n";
+    let hasComments = false;
+
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith('comment-')) {
+        const comment = localStorage.getItem(key);
+        if (comment && comment.trim() !== '') {
+          hasComments = true;
+          const procedureName = key.replace('comment-', '').replace('_SCH', '');
+          const escapedComment = comment.replace(/"/g, '""');
+          csvContent += `"${procedureName}","${escapedComment}"\n`;
+        }
+      }
+    }
+
+    if (!hasComments) {
+      alert("No comments to export yet!");
+      return;
+    }
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", "scheduling-review-comments.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <div className="app-container">
       <div className="header">
         <h1>Scheduling Review Portal</h1>
+        <button className="btn btn-primary" onClick={exportCommentsToCSV}>
+          Export Comments (CSV)
+        </button>
       </div>
       
       <input 
