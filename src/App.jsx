@@ -78,11 +78,13 @@ const ProcedureCard = ({ group, reviewData, onUpdateReview }) => {
           </div>
         )}
       </div>
-
       <div className="html-content legacy-content-wrapper">
-        <div dangerouslySetInnerHTML={{ __html: item.Scheduling_x0020_Instructions }} />
+        {currentHTML ? (
+          <div dangerouslySetInnerHTML={{ __html: currentHTML }} />
+        ) : (
+          <div style={{ color: 'var(--text-muted)', fontStyle: 'italic', padding: '1rem' }}>No content available for this view.</div>
+        )}
       </div>
-
       <div className="comment-section">
         <label className="comment-label">Reviewer Comments</label>
         <textarea
