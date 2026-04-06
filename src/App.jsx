@@ -9,8 +9,9 @@ const data = Object.values(jsonFiles).flatMap(module => module.default || module
 const MODALITY_MAP = {
   1: 'CT / NM',
   2: 'MRI',
-  3: 'Ultrasound',
-  4: 'X-Ray'
+  3: 'GI / Fluoro',
+  4: 'X-Ray',
+  5: 'Ultrasound'
 };
 
 // Memoized HTML content to prevent re-renders when typing in comments
