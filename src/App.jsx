@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { db } from './firebase';
-import { collection, onSnapshot, doc, setDoc } from 'firebase/firestore';
+import { collection, onSnapshot, doc, setDoc, writeBatch } from 'firebase/firestore';
 
 // Automatically load all .json files in the 'src' folder (like data.json, Batch_MRI.json)
 const jsonFiles = import.meta.glob('./*.json', { eager: true });
@@ -107,21 +107,79 @@ export default function App() {
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState('pending'); // 'pending' or 'finished'
   const [reviewsDB, setReviewsDB] = useState({});
+  const [dbProcedures, setDbProcedures] = useState([]);
+  const [isUploading, setIsUploading] = useState(false);
 
   // Sync with Firestore
   useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, "reviews"), (snapshot) => {
+    const unsubReviews = onSnapshot(collection(db, "reviews"), (snapshot) => {
       const dataStore = {};
       snapshot.forEach(doc => {
         dataStore[doc.id] = doc.data();
       });
       setReviewsDB(dataStore);
     }, (error) => {
-      console.error("Error reading from Firebase:", error);
+      console.error("Error reading reviews from Firebase:", error);
     });
 
-    return () => unsubscribe();
+    const unsubProcedures = onSnapshot(collection(db, "procedures"), (snapshot) => {
+      const loaded = [];
+      snapshot.forEach(doc => {
+        loaded.push(doc.data());
+      });
+      setDbProcedures(loaded);
+    }, (error) => {
+      console.error("Error reading procedures from Firebase:", error);
+    });
+
+    return () => {
+      unsubReviews();
+      unsubProcedures();
+    };
   }, []);
+
+  const handleFileUpload = async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    setIsUploading(true);
+    try {
+      const text = await file.text();
+      const jsonData = JSON.parse(text);
+      if (!Array.isArray(jsonData)) {
+        alert("JSON file must contain an array of procedures");
+        setIsUploading(false);
+        return;
+      }
+
+      // Chunk uploads to avoid 500 op limit on Firestore batched writes
+      const chunkSize = 400;
+      let count = 0;
+      for (let i = 0; i < jsonData.length; i += chunkSize) {
+        const chunk = jsonData.slice(i, i + chunkSize);
+        const batch = writeBatch(db);
+        
+        chunk.forEach(item => {
+          if (item.Procedure) {
+            // Replace any slashes to prevent subcollections
+            const cleanId = item.Procedure.replace(/\//g, '-');
+            const docRef = doc(db, 'procedures', cleanId);
+            batch.set(docRef, item, { merge: true });
+            count++;
+          }
+        });
+        
+        await batch.commit();
+      }
+      alert(`Successfully uploaded ${count} procedures to the database!`);
+    } catch (e) {
+      console.error(e);
+      alert("Error parsing JSON or uploading to database");
+    }
+    
+    setIsUploading(false);
+    event.target.value = null; // reset input
+  };
 
   const updateReviewInDB = async (procedureKey, updateData) => {
     try {
@@ -134,7 +192,15 @@ export default function App() {
 
   const groupedData = useMemo(() => {
     const groups = {};
-    data.forEach(item => {
+    
+    // Combine local code-based JSON with dynamically fetched DB procedures
+    const combinedMap = new Map();
+    data.forEach(item => combinedMap.set(item.Procedure, item));
+    dbProcedures.forEach(item => combinedMap.set(item.Procedure, item));
+    
+    const combinedData = Array.from(combinedMap.values());
+
+    combinedData.forEach(item => {
       const isCR = item.Procedure.endsWith('_CR');
       let baseName = item.Procedure.replace(/_CR$|_SCH$/, '');
 
@@ -208,9 +274,32 @@ export default function App() {
     <div className="app-container">
       <div className="header">
         <h1>Scheduling Review Portal</h1>
-        <button className="btn btn-primary" onClick={exportCommentsToCSV}>
-          Export Data (CSV)
-        </button>
+        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          <label 
+            style={{ 
+              padding: '0.5rem 1rem', 
+              background: 'rgba(255, 255, 255, 0.1)', 
+              borderRadius: '0.5rem', 
+              cursor: isUploading ? 'not-allowed' : 'pointer',
+              opacity: isUploading ? 0.6 : 1,
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              fontWeight: 600,
+              fontSize: '0.9rem'
+            }}
+          >
+            {isUploading ? 'Uploading to DB...' : '+ Upload JSON Batch'}
+            <input 
+              type="file" 
+              accept=".json" 
+              onChange={handleFileUpload}
+              style={{ display: 'none' }}
+              disabled={isUploading}
+            />
+          </label>
+          <button className="btn btn-primary" onClick={exportCommentsToCSV}>
+            Export Data (CSV)
+          </button>
+        </div>
       </div>
 
       <input
