@@ -13,8 +13,18 @@ const MODALITY_MAP = {
   4: 'X-Ray'
 };
 
+// Memoized HTML content to prevent re-renders when typing in comments
+const HtmlContent = React.memo(({ html }) => {
+  if (!html) {
+    return (
+      <div style={{ color: 'var(--text-muted)', fontStyle: 'italic', padding: '1rem' }}>No content available for this view.</div>
+    );
+  }
+  return <div dangerouslySetInnerHTML={{ __html: html }} />;
+});
+
 // Component for an individual Procedure item
-const ProcedureCard = ({ group, page, reviewData, onUpdateReview }) => {
+const ProcedureCard = React.memo(({ group, page, reviewData, onUpdateReview }) => {
   const [comment, setComment] = useState('');
   const [savedStatus, setSavedStatus] = useState(false);
 
@@ -62,11 +72,7 @@ const ProcedureCard = ({ group, page, reviewData, onUpdateReview }) => {
       </div>
 
       <div className="html-content legacy-content-wrapper">
-        {contentHTML ? (
-          <div dangerouslySetInnerHTML={{ __html: contentHTML }} />
-        ) : (
-          <div style={{ color: 'var(--text-muted)', fontStyle: 'italic', padding: '1rem' }}>No content available for this view.</div>
-        )}
+        <HtmlContent html={contentHTML} />
       </div>
       <div className="comment-section">
         <label className="comment-label">Reviewer Comments</label>
@@ -86,7 +92,7 @@ const ProcedureCard = ({ group, page, reviewData, onUpdateReview }) => {
       </div>
     </div>
   );
-};
+});
 
 export default function App() {
   const [searchTerm, setSearchTerm] = useState('');
@@ -244,7 +250,6 @@ export default function App() {
 
   const exportCommentsToCSV = () => {
     let csvContent = "Procedure,Page,Finished,Comment\n";
-    let hasComments = false;
 
     groupedData.forEach(group => {
       const dbKey = `${group.baseName}_${activePage}`.replace(/\//g, '-');
@@ -253,15 +258,12 @@ export default function App() {
       const isFinished = reviewData.isFinished || false;
       const pageLabel = activePage === 'SCH' ? 'Scheduling' : 'Clinical Review';
 
-      if (comment.trim() !== '' || isFinished) {
-        hasComments = true;
-        const escapedComment = comment.replace(/"/g, '""');
-        csvContent += `"${group.baseName}","${pageLabel}","${isFinished ? 'Yes' : 'No'}","${escapedComment}"\n`;
-      }
+      const escapedComment = comment.replace(/"/g, '""');
+      csvContent += `"${group.baseName}","${pageLabel}","${isFinished ? 'Yes' : 'No'}","${escapedComment}"\n`;
     });
 
-    if (!hasComments) {
-      alert("No comments or finished items to export yet!");
+    if (groupedData.length === 0) {
+      alert("No procedures to export!");
       return;
     }
 
