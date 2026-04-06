@@ -11,7 +11,7 @@ const MODALITY_MAP = {
   2: 'MRI',
   3: 'GI & Fluoro',
   4: 'Vascular Ultrasound',
-  5: 'GI & General Ultrasound'
+  5: 'General Ultrasound'
 };
 
 // Memoized HTML content to prevent re-renders when typing in comments
