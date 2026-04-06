@@ -6,6 +6,12 @@ import { collection, onSnapshot, doc, setDoc, writeBatch } from 'firebase/firest
 const jsonFiles = import.meta.glob('./*.json', { eager: true });
 const data = Object.values(jsonFiles).flatMap(module => module.default || module);
 
+const MODALITY_MAP = {
+  1: 'CT / NM',
+  2: 'MRI',
+  3: 'Ultrasound',
+  4: 'X-Ray'
+};
 
 // Component for an individual Procedure item
 const ProcedureCard = ({ group, reviewData, onUpdateReview }) => {
@@ -45,7 +51,7 @@ const ProcedureCard = ({ group, reviewData, onUpdateReview }) => {
         <h2 className="procedure-title">{group.baseName}</h2>
         <div className="procedure-tags">
           <span className="tag">Entity {group.Entity0Id}</span>
-          <span className="tag">Modality {group.ModalityId}</span>
+          <span className="tag">{MODALITY_MAP[group.ModalityId] || `Modality ${group.ModalityId}`}</span>
           <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', marginLeft: 'auto', background: isFinished ? 'rgba(52, 211, 153, 0.2)' : 'rgba(255, 255, 255, 0.1)', padding: '0.25rem 0.75rem', borderRadius: '999px', fontSize: '0.875rem' }}>
             <input
               type="checkbox"
@@ -336,9 +342,12 @@ export default function App() {
           style={{ marginBottom: 0, width: 'auto', minWidth: '150px', cursor: 'pointer' }}
         >
           <option value="All">All Modalities</option>
-          {availableModalities.map(modId => (
-            <option key={modId} value={modId}>Modality {modId}</option>
-          ))}
+          {availableModalities.map(modId => {
+            const label = MODALITY_MAP[modId] || `Modality ${modId}`;
+            return (
+              <option key={modId} value={modId}>{label}</option>
+            );
+          })}
         </select>
       </div>
 
