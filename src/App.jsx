@@ -19,7 +19,7 @@ const ProcedureCard = ({ group, page, reviewData, onUpdateReview }) => {
   const [savedStatus, setSavedStatus] = useState(false);
 
   const item = page === 'SCH' ? group.schItem : group.crItem;
-  const dbKey = `${group.baseName}_${page}`;
+  const dbKey = `${group.baseName}_${page}`.replace(/\//g, '-');
   const isFinished = reviewData?.isFinished || false;
 
   // Sync the local text box with the Firebase database
@@ -236,7 +236,7 @@ export default function App() {
 
   const displayedData = useMemo(() => {
     return groupedData.filter(group => {
-      const dbKey = `${group.baseName}_${activePage}`;
+      const dbKey = `${group.baseName}_${activePage}`.replace(/\//g, '-');
       const isFinished = !!(reviewsDB[dbKey]?.isFinished);
       return activeTab === 'finished' ? isFinished : !isFinished;
     });
@@ -247,7 +247,7 @@ export default function App() {
     let hasComments = false;
 
     groupedData.forEach(group => {
-      const dbKey = `${group.baseName}_${activePage}`;
+      const dbKey = `${group.baseName}_${activePage}`.replace(/\//g, '-');
       const reviewData = reviewsDB[dbKey] || {};
       const comment = reviewData.comment || '';
       const isFinished = reviewData.isFinished || false;
@@ -355,7 +355,7 @@ export default function App() {
           onClick={() => setActiveTab('pending')}
         >
           Pending Reviews ({groupedData.filter(g => {
-            const dbKey = `${g.baseName}_${activePage}`;
+            const dbKey = `${g.baseName}_${activePage}`.replace(/\//g, '-');
             return !reviewsDB[dbKey]?.isFinished;
           }).length})
         </div>
@@ -364,7 +364,7 @@ export default function App() {
           onClick={() => setActiveTab('finished')}
         >
           Finished ({groupedData.filter(g => {
-            const dbKey = `${g.baseName}_${activePage}`;
+            const dbKey = `${g.baseName}_${activePage}`.replace(/\//g, '-');
             return reviewsDB[dbKey]?.isFinished;
           }).length})
         </div>
@@ -372,7 +372,7 @@ export default function App() {
 
       <div className="procedure-list">
         {displayedData.slice(0, 100).map((group, index) => {
-          const dbKey = `${group.baseName}_${activePage}`;
+          const dbKey = `${group.baseName}_${activePage}`.replace(/\//g, '-');
           return (
             <ProcedureCard
               key={`${group.baseName}-${activePage}-${index}`}
