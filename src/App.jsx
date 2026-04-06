@@ -14,14 +14,13 @@ const MODALITY_MAP = {
 };
 
 // Component for an individual Procedure item
-const ProcedureCard = ({ group, reviewData, onUpdateReview }) => {
+const ProcedureCard = ({ group, page, reviewData, onUpdateReview }) => {
   const [comment, setComment] = useState('');
   const [savedStatus, setSavedStatus] = useState(false);
-  const [innerTab, setInnerTab] = useState(group.schItem ? 'SCH' : 'CR');
 
+  const item = page === 'SCH' ? group.schItem : group.crItem;
+  const dbKey = `${group.baseName}_${page}`;
   const isFinished = reviewData?.isFinished || false;
-  // Use DB key from scheduler item to preserve previous reviews
-  const dbKey = group.schItem ? group.schItem.Procedure : group.baseName;
 
   // Sync the local text box with the Firebase database
   useEffect(() => {
@@ -41,9 +40,7 @@ const ProcedureCard = ({ group, reviewData, onUpdateReview }) => {
     onUpdateReview(dbKey, { comment, isFinished: !isFinished });
   };
 
-  const currentHTML = innerTab === 'SCH'
-    ? group.schItem?.Scheduling_x0020_Instructions
-    : group.crItem?.Scheduling_x0020_Instructions;
+  const contentHTML = item?.Scheduling_x0020_Instructions;
 
   return (
     <div className={`procedure-card ${isFinished ? 'finished' : ''}`}>
@@ -64,29 +61,9 @@ const ProcedureCard = ({ group, reviewData, onUpdateReview }) => {
         </div>
       </div>
 
-      <div className="tabs" style={{ marginBottom: '1rem' }}>
-        {group.schItem && (
-          <div
-            className={`tab ${innerTab === 'SCH' ? 'active' : ''}`}
-            onClick={() => setInnerTab('SCH')}
-            style={{ padding: '0.25rem 0.5rem', fontSize: '0.875rem' }}
-          >
-            Scheduling Instructions
-          </div>
-        )}
-        {group.crItem && (
-          <div
-            className={`tab ${innerTab === 'CR' ? 'active' : ''}`}
-            onClick={() => setInnerTab('CR')}
-            style={{ padding: '0.25rem 0.5rem', fontSize: '0.875rem' }}
-          >
-            Clinical Review
-          </div>
-        )}
-      </div>
       <div className="html-content legacy-content-wrapper">
-        {currentHTML ? (
-          <div dangerouslySetInnerHTML={{ __html: currentHTML }} />
+        {contentHTML ? (
+          <div dangerouslySetInnerHTML={{ __html: contentHTML }} />
         ) : (
           <div style={{ color: 'var(--text-muted)', fontStyle: 'italic', padding: '1rem' }}>No content available for this view.</div>
         )}
@@ -114,6 +91,7 @@ const ProcedureCard = ({ group, reviewData, onUpdateReview }) => {
 export default function App() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedModality, setSelectedModality] = useState('All');
+  const [activePage, setActivePage] = useState('SCH'); // 'SCH' or 'CR'
   const [activeTab, setActiveTab] = useState('pending'); // 'pending' or 'finished'
   const [reviewsDB, setReviewsDB] = useState({});
   const [dbProcedures, setDbProcedures] = useState([]);
@@ -236,13 +214,15 @@ export default function App() {
     });
 
     const filtered = Object.values(groups).filter(group => {
+      // Only show procedures that have content for the active page
+      const item = activePage === 'SCH' ? group.schItem : group.crItem;
+      if (!item) return false;
+
       const term = searchTerm.toLowerCase();
       const inBaseName = group.baseName.toLowerCase().includes(term);
-      // use optional chaining because this can sometimes be null
-      const inSch = group.schItem && group.schItem.Scheduling_x0020_Instructions?.toLowerCase().includes(term);
-      const inCr = group.crItem && group.crItem.Scheduling_x0020_Instructions?.toLowerCase().includes(term);
-      const matchesSearch = inBaseName || inSch || inCr;
-      
+      const inContent = item.Scheduling_x0020_Instructions?.toLowerCase().includes(term);
+      const matchesSearch = inBaseName || inContent;
+
       const matchesModality = selectedModality === 'All' || group.ModalityId?.toString() === selectedModality;
 
       return matchesSearch && matchesModality;
@@ -252,30 +232,31 @@ export default function App() {
       groupedData: filtered,
       availableModalities: Array.from(mods).sort()
     };
-  }, [searchTerm, selectedModality, dbProcedures]);
+  }, [searchTerm, selectedModality, activePage, dbProcedures]);
 
   const displayedData = useMemo(() => {
     return groupedData.filter(group => {
-      const dbKey = group.schItem ? group.schItem.Procedure : group.baseName;
+      const dbKey = `${group.baseName}_${activePage}`;
       const isFinished = !!(reviewsDB[dbKey]?.isFinished);
       return activeTab === 'finished' ? isFinished : !isFinished;
     });
-  }, [groupedData, reviewsDB, activeTab]);
+  }, [groupedData, reviewsDB, activeTab, activePage]);
 
   const exportCommentsToCSV = () => {
-    let csvContent = "Procedure,Finished,Comment\n";
+    let csvContent = "Procedure,Page,Finished,Comment\n";
     let hasComments = false;
 
     groupedData.forEach(group => {
-      const dbKey = group.schItem ? group.schItem.Procedure : group.baseName;
+      const dbKey = `${group.baseName}_${activePage}`;
       const reviewData = reviewsDB[dbKey] || {};
       const comment = reviewData.comment || '';
       const isFinished = reviewData.isFinished || false;
+      const pageLabel = activePage === 'SCH' ? 'Scheduling' : 'Clinical Review';
 
       if (comment.trim() !== '' || isFinished) {
         hasComments = true;
         const escapedComment = comment.replace(/"/g, '""');
-        csvContent += `"${group.baseName}","${isFinished ? 'Yes' : 'No'}","${escapedComment}"\n`;
+        csvContent += `"${group.baseName}","${pageLabel}","${isFinished ? 'Yes' : 'No'}","${escapedComment}"\n`;
       }
     });
 
@@ -326,6 +307,23 @@ export default function App() {
         </div>
       </div>
 
+      <div className="tabs" style={{ marginBottom: '1.5rem' }}>
+        <div
+          className={`tab ${activePage === 'SCH' ? 'active' : ''}`}
+          onClick={() => { setActivePage('SCH'); setActiveTab('pending'); }}
+          style={{ fontWeight: 700, fontSize: '1rem' }}
+        >
+          Scheduling
+        </div>
+        <div
+          className={`tab ${activePage === 'CR' ? 'active' : ''}`}
+          onClick={() => { setActivePage('CR'); setActiveTab('pending'); }}
+          style={{ fontWeight: 700, fontSize: '1rem' }}
+        >
+          Clinical Review
+        </div>
+      </div>
+
       <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem' }}>
         <input
           type="text"
@@ -335,7 +333,7 @@ export default function App() {
           onChange={(e) => setSearchTerm(e.target.value)}
           style={{ marginBottom: 0, flex: 1 }}
         />
-        <select 
+        <select
           className="search-bar"
           value={selectedModality}
           onChange={(e) => setSelectedModality(e.target.value)}
@@ -357,7 +355,7 @@ export default function App() {
           onClick={() => setActiveTab('pending')}
         >
           Pending Reviews ({groupedData.filter(g => {
-            const dbKey = g.schItem ? g.schItem.Procedure : g.baseName;
+            const dbKey = `${g.baseName}_${activePage}`;
             return !reviewsDB[dbKey]?.isFinished;
           }).length})
         </div>
@@ -366,7 +364,7 @@ export default function App() {
           onClick={() => setActiveTab('finished')}
         >
           Finished ({groupedData.filter(g => {
-            const dbKey = g.schItem ? g.schItem.Procedure : g.baseName;
+            const dbKey = `${g.baseName}_${activePage}`;
             return reviewsDB[dbKey]?.isFinished;
           }).length})
         </div>
@@ -374,11 +372,12 @@ export default function App() {
 
       <div className="procedure-list">
         {displayedData.slice(0, 100).map((group, index) => {
-          const dbKey = group.schItem ? group.schItem.Procedure : group.baseName;
+          const dbKey = `${group.baseName}_${activePage}`;
           return (
             <ProcedureCard
-              key={`${group.baseName}-${index}`}
+              key={`${group.baseName}-${activePage}-${index}`}
               group={group}
+              page={activePage}
               reviewData={reviewsDB[dbKey]}
               onUpdateReview={updateReviewInDB}
             />
