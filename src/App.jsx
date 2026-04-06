@@ -3,7 +3,6 @@ import data from './data.json';
 
 // Component for an individual Procedure item
 const ProcedureCard = ({ item }) => {
-  const [activeTab, setActiveTab] = useState('instructions');
   const [comment, setComment] = useState('');
   const [savedStatus, setSavedStatus] = useState(false);
 
@@ -21,41 +20,18 @@ const ProcedureCard = ({ item }) => {
     setTimeout(() => setSavedStatus(false), 2000);
   };
 
-  const hasNotes = item.Clinical_x0020_Review_x0020_Notes && item.Clinical_x0020_Review_x0020_Notes.trim() !== '';
-
   return (
     <div className="procedure-card">
       <div className="procedure-header">
-        <h2 className="procedure-title">{item.Procedure}</h2>
+        <h2 className="procedure-title">{item.Procedure.replace('_SCH', '')}</h2>
         <div className="procedure-tags">
           <span className="tag">Entity {item.Entity0Id}</span>
           <span className="tag">Modality {item.ModalityId}</span>
         </div>
       </div>
 
-      <div className="tabs">
-        <div 
-          className={`tab ${activeTab === 'instructions' ? 'active' : ''}`}
-          onClick={() => setActiveTab('instructions')}
-        >
-          Scheduling Instructions
-        </div>
-        {hasNotes && (
-          <div 
-            className={`tab ${activeTab === 'notes' ? 'active' : ''}`}
-            onClick={() => setActiveTab('notes')}
-          >
-            Clinical Review Notes
-          </div>
-        )}
-      </div>
-
       <div className="html-content legacy-content-wrapper">
-        {activeTab === 'instructions' ? (
-          <div dangerouslySetInnerHTML={{ __html: item.Scheduling_x0020_Instructions }} />
-        ) : (
-          <div dangerouslySetInnerHTML={{ __html: item.Clinical_x0020_Review_x0020_Notes }} />
-        )}
+        <div dangerouslySetInnerHTML={{ __html: item.Scheduling_x0020_Instructions }} />
       </div>
 
       <div className="comment-section">
@@ -84,6 +60,7 @@ export default function App() {
   // Clean up duplicate entries by procedure name just in case, though we will just render them all
   const filteredData = useMemo(() => {
     return data.filter(item => 
+      !item.Procedure.endsWith('_CR') &&
       item.Procedure.toLowerCase().includes(searchTerm.toLowerCase())
     );
   }, [searchTerm]);
