@@ -1,7 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import data from './data.json';
 import { db } from './firebase';
 import { collection, onSnapshot, doc, setDoc } from 'firebase/firestore';
+
+// Automatically load all .json files in the 'src' folder (like data.json, Batch_MRI.json)
+const jsonFiles = import.meta.glob('./*.json', { eager: true });
+const data = Object.values(jsonFiles).flatMap(module => module.default || module);
+
 
 // Component for an individual Procedure item
 const ProcedureCard = ({ group, reviewData, onUpdateReview }) => {
@@ -18,7 +22,7 @@ const ProcedureCard = ({ group, reviewData, onUpdateReview }) => {
     if (reviewData?.comment !== undefined && reviewData?.comment !== comment) {
       setComment(reviewData.comment);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reviewData?.comment]);
 
   const handleSave = () => {
@@ -31,8 +35,8 @@ const ProcedureCard = ({ group, reviewData, onUpdateReview }) => {
     onUpdateReview(dbKey, { comment, isFinished: !isFinished });
   };
 
-  const currentHTML = innerTab === 'SCH' 
-    ? group.schItem?.Scheduling_x0020_Instructions 
+  const currentHTML = innerTab === 'SCH'
+    ? group.schItem?.Scheduling_x0020_Instructions
     : group.crItem?.Scheduling_x0020_Instructions;
 
   return (
@@ -43,9 +47,9 @@ const ProcedureCard = ({ group, reviewData, onUpdateReview }) => {
           <span className="tag">Entity {group.Entity0Id}</span>
           <span className="tag">Modality {group.ModalityId}</span>
           <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', marginLeft: 'auto', background: isFinished ? 'rgba(52, 211, 153, 0.2)' : 'rgba(255, 255, 255, 0.1)', padding: '0.25rem 0.75rem', borderRadius: '999px', fontSize: '0.875rem' }}>
-            <input 
-              type="checkbox" 
-              checked={!!isFinished} 
+            <input
+              type="checkbox"
+              checked={!!isFinished}
               onChange={handleToggleFinished}
               style={{ cursor: 'pointer' }}
             />
@@ -56,7 +60,7 @@ const ProcedureCard = ({ group, reviewData, onUpdateReview }) => {
 
       <div className="tabs" style={{ marginBottom: '1rem' }}>
         {group.schItem && (
-          <div 
+          <div
             className={`tab ${innerTab === 'SCH' ? 'active' : ''}`}
             onClick={() => setInnerTab('SCH')}
             style={{ padding: '0.25rem 0.5rem', fontSize: '0.875rem' }}
@@ -65,7 +69,7 @@ const ProcedureCard = ({ group, reviewData, onUpdateReview }) => {
           </div>
         )}
         {group.crItem && (
-          <div 
+          <div
             className={`tab ${innerTab === 'CR' ? 'active' : ''}`}
             onClick={() => setInnerTab('CR')}
             style={{ padding: '0.25rem 0.5rem', fontSize: '0.875rem' }}
@@ -76,16 +80,12 @@ const ProcedureCard = ({ group, reviewData, onUpdateReview }) => {
       </div>
 
       <div className="html-content legacy-content-wrapper">
-        {currentHTML ? (
-          <div dangerouslySetInnerHTML={{ __html: currentHTML }} />
-        ) : (
-          <div style={{ color: 'var(--text-muted)', fontStyle: 'italic', padding: '1rem' }}>No content available for this view.</div>
-        )}
+        <div dangerouslySetInnerHTML={{ __html: item.Scheduling_x0020_Instructions }} />
       </div>
 
       <div className="comment-section">
         <label className="comment-label">Reviewer Comments</label>
-        <textarea 
+        <textarea
           placeholder="Add your comments here for changes, notes, etc..."
           value={comment}
           onChange={(e) => setComment(e.target.value)}
@@ -131,15 +131,15 @@ export default function App() {
       alert("Error saving to database! Check your Firebase rules.");
     }
   };
-  
+
   const groupedData = useMemo(() => {
     const groups = {};
     data.forEach(item => {
       const isCR = item.Procedure.endsWith('_CR');
       let baseName = item.Procedure.replace(/_CR$|_SCH$/, '');
-      
+
       if (!groups[baseName]) {
-        groups[baseName] = { 
+        groups[baseName] = {
           baseName,
           schItem: null,
           crItem: null,
@@ -147,14 +147,14 @@ export default function App() {
           ModalityId: item.ModalityId
         };
       }
-      
+
       if (isCR) {
         groups[baseName].crItem = item;
       } else {
         groups[baseName].schItem = item;
       }
     });
-    
+
     return Object.values(groups).filter(group => {
       const term = searchTerm.toLowerCase();
       const inBaseName = group.baseName.toLowerCase().includes(term);
@@ -181,7 +181,7 @@ export default function App() {
       const reviewData = reviewsDB[dbKey] || {};
       const comment = reviewData.comment || '';
       const isFinished = reviewData.isFinished || false;
-      
+
       if (comment.trim() !== '' || isFinished) {
         hasComments = true;
         const escapedComment = comment.replace(/"/g, '""');
@@ -212,17 +212,17 @@ export default function App() {
           Export Data (CSV)
         </button>
       </div>
-      
-      <input 
-        type="text" 
-        className="search-bar" 
+
+      <input
+        type="text"
+        className="search-bar"
         placeholder="Filter procedures or instructions..."
         value={searchTerm}
         onChange={(e) => setSearchTerm(e.target.value)}
       />
 
       <div className="tabs" style={{ marginBottom: '1.5rem' }}>
-        <div 
+        <div
           className={`tab ${activeTab === 'pending' ? 'active' : ''}`}
           onClick={() => setActiveTab('pending')}
         >
@@ -231,7 +231,7 @@ export default function App() {
             return !reviewsDB[dbKey]?.isFinished;
           }).length})
         </div>
-        <div 
+        <div
           className={`tab ${activeTab === 'finished' ? 'active' : ''}`}
           onClick={() => setActiveTab('finished')}
         >
@@ -246,21 +246,21 @@ export default function App() {
         {displayedData.slice(0, 100).map((group, index) => {
           const dbKey = group.schItem ? group.schItem.Procedure : group.baseName;
           return (
-            <ProcedureCard 
-              key={`${group.baseName}-${index}`} 
-              group={group} 
+            <ProcedureCard
+              key={`${group.baseName}-${index}`}
+              group={group}
               reviewData={reviewsDB[dbKey]}
               onUpdateReview={updateReviewInDB}
             />
           );
         })}
         {displayedData.length > 100 && (
-          <div style={{textAlign: 'center', margin: '2rem 0', color: 'var(--text-muted)'}}>
+          <div style={{ textAlign: 'center', margin: '2rem 0', color: 'var(--text-muted)' }}>
             Showing 100 of {displayedData.length} results. Please use the search bar to find more.
           </div>
         )}
         {displayedData.length === 0 && (
-          <div style={{textAlign: 'center', margin: '2rem 0', color: 'var(--text-muted)'}}>
+          <div style={{ textAlign: 'center', margin: '2rem 0', color: 'var(--text-muted)' }}>
             No procedures found in this tab.
           </div>
         )}
