@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { db } from './firebase';
-import { collection, onSnapshot, doc, setDoc, writeBatch } from 'firebase/firestore';
+import { collection, onSnapshot, doc, setDoc, writeBatch, deleteDoc } from 'firebase/firestore';
 
 // Automatically load all .json files in the 'src' folder (like data.json, Batch_MRI.json)
 const jsonFiles = import.meta.glob('./*.json', { eager: true });
@@ -147,25 +147,31 @@ export default function App() {
       }
 
       // Chunk uploads to avoid 500 op limit on Firestore batched writes
-      const chunkSize = 400;
+      const chunkSize = 200; // Lower chunk size to account for review clears (2 ops per item)
       let count = 0;
       for (let i = 0; i < jsonData.length; i += chunkSize) {
         const chunk = jsonData.slice(i, i + chunkSize);
         const batch = writeBatch(db);
-        
+
         chunk.forEach(item => {
           if (item.Procedure) {
             // Replace any slashes to prevent subcollections
             const cleanId = item.Procedure.replace(/\//g, '-');
             const docRef = doc(db, 'procedures', cleanId);
             batch.set(docRef, item, { merge: true });
+
+            // Clear the reviewer comment/notes for this procedure
+            const reviewKey = cleanId.replace(/\//g, '-');
+            const reviewRef = doc(db, 'reviews', reviewKey);
+            batch.set(reviewRef, { comment: '', isFinished: false }, { merge: true });
+
             count++;
           }
         });
-        
+
         await batch.commit();
       }
-      alert(`Successfully uploaded ${count} procedures to the database!`);
+      alert(`Successfully uploaded ${count} procedures! Reviewer notes have been cleared for uploaded items.`);
     } catch (e) {
       console.error(e);
       alert("Error parsing JSON or uploading to database");
