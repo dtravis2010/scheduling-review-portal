@@ -1,6 +1,9 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { db } from './firebase';
-import { collection, onSnapshot, doc, setDoc, writeBatch, deleteDoc } from 'firebase/firestore';
+import { collection, onSnapshot, doc, setDoc, writeBatch } from 'firebase/firestore';
+import { parseCard } from './cardParser';
+import { buildCardHTML } from './cardBuilder';
+import EditorPanel from './EditorPanel';
 
 // Automatically load all .json files in the 'src' folder (like data.json, Batch_MRI.json)
 const jsonFiles = import.meta.glob('./*.json', { eager: true });
@@ -25,13 +28,18 @@ const HtmlContent = React.memo(({ html }) => {
 });
 
 // Component for an individual Procedure item
-const ProcedureCard = React.memo(({ group, page, reviewData, onUpdateReview }) => {
+const ProcedureCard = React.memo(({ group, page, reviewData, onUpdateReview, onSaveProcedureHTML }) => {
   const [comment, setComment] = useState('');
   const [savedStatus, setSavedStatus] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+  const [editorState, setEditorState] = useState(null);
+  const [editorSaved, setEditorSaved] = useState(false);
+  const [editorError, setEditorError] = useState('');
 
   const item = page === 'SCH' ? group.schItem : group.crItem;
   const dbKey = `${group.baseName}_${page}`.replace(/\//g, '-');
   const isFinished = reviewData?.isFinished || false;
+  const canEdit = page === 'SCH' && !!item; // Editor scoped to scheduling cards for now
 
   // Sync the local text box with the Firebase database
   useEffect(() => {
@@ -51,6 +59,40 @@ const ProcedureCard = React.memo(({ group, page, reviewData, onUpdateReview }) =
     onUpdateReview(dbKey, { comment, isFinished: !isFinished });
   };
 
+  const enterEditMode = () => {
+    try {
+      const parsed = parseCard(item?.Scheduling_x0020_Instructions || '');
+      // Pre-fill procedure name from baseName if parser missed it
+      if (!parsed.procedureName) parsed.procedureName = group.baseName;
+      setEditorState(parsed);
+      setEditorError('');
+      setEditMode(true);
+    } catch (e) {
+      console.error('Parser error:', e);
+      setEditorError('Could not parse this card into structured fields. Try again or report.');
+    }
+  };
+
+  const cancelEdit = () => {
+    setEditMode(false);
+    setEditorState(null);
+    setEditorError('');
+  };
+
+  const saveEdit = async () => {
+    if (!editorState) return;
+    try {
+      const newHTML = buildCardHTML(editorState);
+      await onSaveProcedureHTML(item.Procedure, newHTML);
+      setEditorSaved(true);
+      setTimeout(() => setEditorSaved(false), 2500);
+      // Stay in edit mode so user can keep tweaking
+    } catch (e) {
+      console.error(e);
+      setEditorError('Save failed: ' + (e.message || 'unknown error'));
+    }
+  };
+
   const contentHTML = item?.Scheduling_x0020_Instructions;
 
   return (
@@ -60,6 +102,25 @@ const ProcedureCard = React.memo(({ group, page, reviewData, onUpdateReview }) =
         <div className="procedure-tags">
           <span className="tag">Entity {group.Entity0Id}</span>
           <span className="tag">{MODALITY_MAP[group.ModalityId] || `Modality ${group.ModalityId}`}</span>
+          {canEdit && (
+            <button
+              type="button"
+              className="btn"
+              onClick={editMode ? cancelEdit : enterEditMode}
+              style={{
+                padding: '0.25rem 0.75rem',
+                background: editMode ? 'rgba(248,113,113,0.18)' : 'rgba(96,165,250,0.18)',
+                border: `1px solid ${editMode ? 'rgba(248,113,113,0.4)' : 'rgba(96,165,250,0.4)'}`,
+                color: editMode ? '#fca5a5' : '#93c5fd',
+                fontSize: '0.8rem',
+                fontWeight: 600,
+                borderRadius: '999px',
+                cursor: 'pointer'
+              }}
+            >
+              {editMode ? '✕ Cancel' : '✏ Edit'}
+            </button>
+          )}
           <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', marginLeft: 'auto', background: isFinished ? 'rgba(52, 211, 153, 0.2)' : 'rgba(255, 255, 255, 0.1)', padding: '0.25rem 0.75rem', borderRadius: '999px', fontSize: '0.875rem' }}>
             <input
               type="checkbox"
@@ -72,25 +133,53 @@ const ProcedureCard = React.memo(({ group, page, reviewData, onUpdateReview }) =
         </div>
       </div>
 
-      <div className="html-content legacy-content-wrapper">
-        <HtmlContent html={contentHTML} />
-      </div>
-      <div className="comment-section">
-        <label className="comment-label">Reviewer Comments</label>
-        <textarea
-          placeholder="Add your comments here for changes, notes, etc..."
-          value={comment}
-          onChange={(e) => setComment(e.target.value)}
-        />
-        <div className="button-group">
-          <span className={`saved-status ${savedStatus ? 'visible' : ''}`}>
-            ✓ Saved to Database
-          </span>
-          <button className="btn btn-primary" onClick={handleSave}>
-            Save Comment
-          </button>
+      {editMode && editorState ? (
+        <div>
+          {editorError && (
+            <div style={{ background: 'rgba(248,113,113,0.15)', border: '1px solid rgba(248,113,113,0.4)', color: '#fca5a5', padding: '0.5rem 0.75rem', borderRadius: '0.375rem', marginBottom: '1rem' }}>
+              {editorError}
+            </div>
+          )}
+          <EditorPanel value={editorState} onChange={setEditorState} />
+          <details style={{ marginBottom: '1rem' }}>
+            <summary style={{ cursor: 'pointer', color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '0.5rem' }}>Live preview (click to expand)</summary>
+            <div className="html-content legacy-content-wrapper" style={{ border: '1px solid rgba(255,255,255,0.1)', borderRadius: '0.5rem', padding: '1rem', background: '#fff' }}>
+              <HtmlContent html={buildCardHTML(editorState)} />
+            </div>
+          </details>
+          <div className="button-group">
+            <span className={`saved-status ${editorSaved ? 'visible' : ''}`}>✓ Saved to Database</span>
+            <button type="button" className="btn" onClick={cancelEdit} style={{ background: 'rgba(255,255,255,0.08)', color: 'var(--text-muted)' }}>
+              Cancel
+            </button>
+            <button type="button" className="btn btn-primary" onClick={saveEdit}>
+              Save Changes
+            </button>
+          </div>
         </div>
-      </div>
+      ) : (
+        <>
+          <div className="html-content legacy-content-wrapper">
+            <HtmlContent html={contentHTML} />
+          </div>
+          <div className="comment-section">
+            <label className="comment-label">Reviewer Comments</label>
+            <textarea
+              placeholder="Add your comments here for changes, notes, etc..."
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+            />
+            <div className="button-group">
+              <span className={`saved-status ${savedStatus ? 'visible' : ''}`}>
+                ✓ Saved to Database
+              </span>
+              <button className="btn btn-primary" onClick={handleSave}>
+                Save Comment
+              </button>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 });
@@ -176,7 +265,7 @@ export default function App() {
       console.error(e);
       alert("Error parsing JSON or uploading to database");
     }
-    
+
     setIsUploading(false);
     event.target.value = null; // reset input
   };
@@ -190,22 +279,32 @@ export default function App() {
     }
   };
 
+  // Persist edited HTML back to the procedures collection (the editor's save handler)
+  const saveProcedureHTML = useCallback(async (procedureName, newHTML) => {
+    const cleanId = procedureName.replace(/\//g, '-');
+    await setDoc(
+      doc(db, 'procedures', cleanId),
+      { Scheduling_x0020_Instructions: newHTML },
+      { merge: true }
+    );
+  }, []);
+
   const { groupedData, availableModalities } = useMemo(() => {
     const groups = {};
-    
+
     // Combine local code-based JSON with dynamically fetched DB procedures
     const combinedMap = new Map();
     data.forEach(item => combinedMap.set(item.Procedure, item));
     dbProcedures.forEach(item => combinedMap.set(item.Procedure, item));
-    
+
     const combinedData = Array.from(combinedMap.values());
     const mods = new Set();
-    
+
     combinedData.forEach(item => {
       if (item.ModalityId !== undefined && item.ModalityId !== null) {
         mods.add(item.ModalityId);
       }
-      
+
       const isCR = item.Procedure.endsWith('_CR');
       let baseName = item.Procedure.replace(/_CR$|_SCH$/, '');
 
@@ -284,16 +383,52 @@ export default function App() {
     document.body.removeChild(link);
   };
 
+  // Export all current procedures (filtered by active page = SCH or CR) as a Power Automate update JSON.
+  const exportPowerAutomateJSON = () => {
+    if (dbProcedures.length === 0) {
+      alert("No procedures in the database yet. Upload a JSON Batch first.");
+      return;
+    }
+    // Active page determines the suffix to export. Default: all SCH items.
+    const suffix = activePage === 'SCH' ? '_SCH' : '_CR';
+    const items = dbProcedures
+      .filter(p => p.Procedure && p.Procedure.endsWith(suffix))
+      .map(p => ({
+        Entity0Id: p.Entity0Id ?? 24,
+        ModalityId: p.ModalityId,
+        Procedure: p.Procedure,
+        Scheduling_x0020_Instructions: p.Scheduling_x0020_Instructions || '',
+        Clinical_x0020_Review_x0020_Notes: p.Clinical_x0020_Review_x0020_Notes || ''
+      }));
+
+    if (items.length === 0) {
+      alert(`No ${activePage} procedures found in the database to export.`);
+      return;
+    }
+
+    const stamp = new Date().toISOString().slice(0, 10);
+    const fileName = `Update_${activePage}_${stamp}.json`;
+    const blob = new Blob([JSON.stringify(items, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="app-container">
       <div className="header">
         <h1>Scheduling Review Portal</h1>
         <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
-          <label 
-            style={{ 
-              padding: '0.5rem 1rem', 
-              background: 'rgba(255, 255, 255, 0.1)', 
-              borderRadius: '0.5rem', 
+          <label
+            style={{
+              padding: '0.5rem 1rem',
+              background: 'rgba(255, 255, 255, 0.1)',
+              borderRadius: '0.5rem',
               cursor: isUploading ? 'not-allowed' : 'pointer',
               opacity: isUploading ? 0.6 : 1,
               border: '1px solid rgba(255, 255, 255, 0.1)',
@@ -302,16 +437,19 @@ export default function App() {
             }}
           >
             {isUploading ? 'Uploading to DB...' : '+ Upload JSON Batch'}
-            <input 
-              type="file" 
-              accept=".json" 
+            <input
+              type="file"
+              accept=".json"
               onChange={handleFileUpload}
               style={{ display: 'none' }}
               disabled={isUploading}
             />
           </label>
-          <button className="btn btn-primary" onClick={exportCommentsToCSV}>
-            Export Data (CSV)
+          <button className="btn" onClick={exportCommentsToCSV} title="Export reviewer comments + finished status as CSV" style={{ background: 'rgba(255,255,255,0.08)', color: 'var(--text-primary)' }}>
+            Comments CSV
+          </button>
+          <button className="btn btn-primary" onClick={exportPowerAutomateJSON} title="Download all current procedures as a Power Automate update JSON">
+            ↓ Export Power Automate JSON
           </button>
         </div>
       </div>
@@ -389,6 +527,7 @@ export default function App() {
               page={activePage}
               reviewData={reviewsDB[dbKey]}
               onUpdateReview={updateReviewInDB}
+              onSaveProcedureHTML={saveProcedureHTML}
             />
           );
         })}
