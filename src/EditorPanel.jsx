@@ -3,6 +3,12 @@
 // Receives a `value` (parsed structure) and an `onChange(updated)` callback.
 
 import React, { useState } from 'react';
+import {
+  STANDARD_STAT_BULLETS,
+  STANDARD_ASAP_BULLETS,
+  STANDARD_SPECIAL_NEEDS_BULLETS,
+  STANDARD_COVID_BULLETS
+} from './standardCallouts';
 
 const fieldLabel = (text) => (
   <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--accent-blue, #60a5fa)', fontWeight: 700, marginBottom: 6 }}>{text}</div>
@@ -355,12 +361,28 @@ const SCHEditor = ({ value, onChange }) => {
           <BulletList label="Shared Entity Notes (apply to all performing entities)" bullets={value.sharedEntityNotes || []} onChange={(b) => update({ sharedEntityNotes: b })} />
           <EntityMatrixTable rows={value.entityMatrix || []} onChange={(rows) => update({ entityMatrix: rows })} />
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-            <BulletList label="STAT Orders bullets" bullets={value.stat || []} onChange={(b) => update({ stat: b })} />
-            <BulletList label="ASAP / Same Day / Next Day (Non-STAT) bullets" bullets={value.asap || []} onChange={(b) => update({ asap: b })} />
+            <BulletList
+              label="STAT Orders bullets"
+              bullets={(value.stat && value.stat.length) ? value.stat : STANDARD_STAT_BULLETS}
+              onChange={(b) => update({ stat: b })}
+            />
+            <BulletList
+              label="ASAP / Same Day / Next Day (Non-STAT) bullets"
+              bullets={(value.asap && value.asap.length) ? value.asap : STANDARD_ASAP_BULLETS}
+              onChange={(b) => update({ asap: b })}
+            />
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-            <BulletList label="Special Needs bullets" bullets={value.specialNeeds || []} onChange={(b) => update({ specialNeeds: b })} />
-            <BulletList label="COVID STATUS bullets" bullets={value.covid || []} onChange={(b) => update({ covid: b })} />
+            <BulletList
+              label="Special Needs bullets"
+              bullets={(value.specialNeeds && value.specialNeeds.length) ? value.specialNeeds : STANDARD_SPECIAL_NEEDS_BULLETS}
+              onChange={(b) => update({ specialNeeds: b })}
+            />
+            <BulletList
+              label="COVID STATUS bullets"
+              bullets={(value.covid && value.covid.length) ? value.covid : STANDARD_COVID_BULLETS}
+              onChange={(b) => update({ covid: b })}
+            />
           </div>
         </>
       )}
