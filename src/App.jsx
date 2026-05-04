@@ -84,7 +84,7 @@ const ProcedureCard = React.memo(({ group, page, reviewData, onUpdateReview, onS
   };
 
   const saveEdit = async () => {
-    if (!editorState) return;
+    if (!editorState) return false;
     try {
       const newHTML = page === 'SCH' ? buildCardHTML(editorState) : buildCRCardHTML(editorState);
       const fieldName = page === 'SCH' ? 'Scheduling_x0020_Instructions' : 'Clinical_x0020_Review_x0020_Notes';
@@ -92,9 +92,20 @@ const ProcedureCard = React.memo(({ group, page, reviewData, onUpdateReview, onS
       setEditorSaved(true);
       setTimeout(() => setEditorSaved(false), 2500);
       // Stay in edit mode so user can keep tweaking
+      return true;
     } catch (e) {
       console.error(e);
       setEditorError('Save failed: ' + (e.message || 'unknown error'));
+      return false;
+    }
+  };
+
+  const saveAndClose = async () => {
+    const ok = await saveEdit();
+    if (ok) {
+      setEditMode(false);
+      setEditorState(null);
+      setEditorError('');
     }
   };
 
@@ -152,11 +163,14 @@ const ProcedureCard = React.memo(({ group, page, reviewData, onUpdateReview, onS
           </details>
           <div className="button-group">
             <span className={`saved-status ${editorSaved ? 'visible' : ''}`}>✓ Saved to Database</span>
-            <button type="button" className="btn" onClick={cancelEdit} style={{ background: 'rgba(255,255,255,0.08)', color: 'var(--text-muted)' }}>
-              Cancel
+            <button type="button" className="btn" onClick={cancelEdit} style={{ background: 'rgba(255,255,255,0.08)', color: 'var(--text-muted)' }} title="Discard unsaved changes and close the editor">
+              Discard &amp; Close
             </button>
-            <button type="button" className="btn btn-primary" onClick={saveEdit}>
-              Save Changes
+            <button type="button" className="btn" onClick={saveEdit} style={{ background: 'rgba(96,165,250,0.18)', border: '1px solid rgba(96,165,250,0.4)', color: '#93c5fd' }} title="Save changes and keep editing">
+              Save
+            </button>
+            <button type="button" className="btn btn-primary" onClick={saveAndClose} title="Save changes and close the editor">
+              ✓ Done
             </button>
           </div>
         </div>
