@@ -1,6 +1,6 @@
 // EditorPanel.jsx
-// Structured editor for a single SCH card. Receives a `value` (parsed structure)
-// and an `onChange(updated)` callback. Renders form fields for every section.
+// Structured editor for SCH and CR cards. Pass `kind="SCH"` or `kind="CR"`.
+// Receives a `value` (parsed structure) and an `onChange(updated)` callback.
 
 import React, { useState } from 'react';
 
@@ -108,6 +108,90 @@ const OrderOptionsTable = ({ rows, onChange }) => {
   );
 };
 
+const EpicOrderablesTable = ({ rows, onChange }) => {
+  const update = (i, field, v) => {
+    const next = rows.map((r, idx) => idx === i ? { ...r, [field]: v } : r);
+    onChange(next);
+  };
+  const add = () => onChange([...rows, { orderableName: '', contrast: '', epicId: '' }]);
+  const remove = (i) => onChange(rows.filter((_, idx) => idx !== i));
+  const headerCell = { padding: '0.5rem', textAlign: 'left', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted, #94a3b8)', fontWeight: 700, borderBottom: '1px solid rgba(255,255,255,0.1)' };
+  return (
+    <div style={sectionWrap}>
+      {fieldLabel('Epic Orderables / Exam Variants')}
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 600 }}>
+          <thead>
+            <tr>
+              <th style={headerCell}>Orderable Name</th>
+              <th style={{ ...headerCell, width: 140 }}>Contrast</th>
+              <th style={{ ...headerCell, width: 180 }}>Epic ID</th>
+              <th style={{ ...headerCell, width: 40 }}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {(rows || []).map((r, i) => (
+              <tr key={i}>
+                <td style={{ padding: 4 }}><input style={inputStyle} value={r.orderableName} onChange={(e) => update(i, 'orderableName', e.target.value)} /></td>
+                <td style={{ padding: 4 }}><input style={inputStyle} value={r.contrast} onChange={(e) => update(i, 'contrast', e.target.value)} /></td>
+                <td style={{ padding: 4 }}><input style={inputStyle} value={r.epicId} onChange={(e) => update(i, 'epicId', e.target.value)} /></td>
+                <td style={{ padding: 4, verticalAlign: 'top' }}><button type="button" style={dangerBtnStyle} onClick={() => remove(i)} title="Delete row">&#10005;</button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div style={{ marginTop: 8 }}>
+        <button type="button" style={btnStyle} onClick={add}>+ Add orderable</button>
+      </div>
+    </div>
+  );
+};
+
+const TipSheetsTable = ({ rows, onChange }) => {
+  const update = (i, field, v) => {
+    const next = rows.map((r, idx) => idx === i ? { ...r, [field]: v } : r);
+    onChange(next);
+  };
+  const add = () => onChange([...rows, { title: '', link: '' }]);
+  const remove = (i) => onChange(rows.filter((_, idx) => idx !== i));
+  const headerCell = { padding: '0.5rem', textAlign: 'left', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted, #94a3b8)', fontWeight: 700, borderBottom: '1px solid rgba(255,255,255,0.1)' };
+  return (
+    <div style={sectionWrap}>
+      {fieldLabel('Pertinent Tip Sheets')}
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 500 }}>
+          <thead>
+            <tr>
+              <th style={headerCell}>Title</th>
+              <th style={headerCell}>Link (URL)</th>
+              <th style={{ ...headerCell, width: 40 }}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {(rows || []).map((r, i) => (
+              <tr key={i}>
+                <td style={{ padding: 4 }}><input style={inputStyle} value={r.title} onChange={(e) => update(i, 'title', e.target.value)} /></td>
+                <td style={{ padding: 4 }}><input style={inputStyle} placeholder="https://..." value={r.link} onChange={(e) => update(i, 'link', e.target.value)} /></td>
+                <td style={{ padding: 4, verticalAlign: 'top' }}><button type="button" style={dangerBtnStyle} onClick={() => remove(i)} title="Delete tip sheet">&#10005;</button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div style={{ marginTop: 8 }}>
+        <button type="button" style={btnStyle} onClick={add}>+ Add tip sheet</button>
+      </div>
+    </div>
+  );
+};
+
+const STATUS_PILLS = [
+  { key: 'YES', activeBg: 'rgba(34,197,94,0.2)', activeColor: '#86efac', activeBorder: '#22c55e' },
+  { key: 'NO', activeBg: 'rgba(239,68,68,0.2)', activeColor: '#fca5a5', activeBorder: '#ef4444' },
+  { key: 'OOS', activeBg: 'rgba(255,102,0,0.2)', activeColor: '#fdba74', activeBorder: '#f97316' }
+];
+
 const EntityMatrixTable = ({ rows, onChange }) => {
   const [newEntity, setNewEntity] = useState('');
 
@@ -133,26 +217,15 @@ const EntityMatrixTable = ({ rows, onChange }) => {
     }
   };
 
-  const yesBtn = (active) => ({
-    padding: '0.25rem 0.75rem',
+  const pillStyle = (active, color) => ({
+    padding: '0.25rem 0.65rem',
     border: '1px solid',
-    borderColor: active ? '#22c55e' : 'rgba(255,255,255,0.15)',
+    borderColor: active ? color.activeBorder : 'rgba(255,255,255,0.15)',
     borderRadius: '0.375rem',
-    background: active ? 'rgba(34,197,94,0.2)' : 'rgba(0,0,0,0.2)',
-    color: active ? '#86efac' : 'var(--text-muted, #94a3b8)',
+    background: active ? color.activeBg : 'rgba(0,0,0,0.2)',
+    color: active ? color.activeColor : 'var(--text-muted, #94a3b8)',
     fontWeight: 700,
-    fontSize: '0.75rem',
-    cursor: 'pointer'
-  });
-  const noBtn = (active) => ({
-    padding: '0.25rem 0.75rem',
-    border: '1px solid',
-    borderColor: active ? '#ef4444' : 'rgba(255,255,255,0.15)',
-    borderRadius: '0.375rem',
-    background: active ? 'rgba(239,68,68,0.2)' : 'rgba(0,0,0,0.2)',
-    color: active ? '#fca5a5' : 'var(--text-muted, #94a3b8)',
-    fontWeight: 700,
-    fontSize: '0.75rem',
+    fontSize: '0.72rem',
     cursor: 'pointer'
   });
 
@@ -161,11 +234,19 @@ const EntityMatrixTable = ({ rows, onChange }) => {
       {fieldLabel(`Entity Matrix (${rows?.length || 0} entities)`)}
       <div style={{ display: 'grid', gap: 8 }}>
         {(rows || []).map((r, i) => (
-          <div key={r.entity || i} style={{ display: 'grid', gridTemplateColumns: '90px 130px 1fr 32px', gap: 8, alignItems: 'center' }}>
+          <div key={r.entity || i} style={{ display: 'grid', gridTemplateColumns: '90px 170px 1fr 32px', gap: 8, alignItems: 'center' }}>
             <div style={{ fontWeight: 700, color: 'var(--accent-blue, #60a5fa)', fontSize: '0.85rem' }}>{r.entity}</div>
-            <div style={{ display: 'flex', gap: 6 }}>
-              <button type="button" style={yesBtn(r.performs === 'YES')} onClick={() => update(i, 'performs', 'YES')}>YES</button>
-              <button type="button" style={noBtn(r.performs === 'NO')} onClick={() => update(i, 'performs', 'NO')}>NO</button>
+            <div style={{ display: 'flex', gap: 4 }}>
+              {STATUS_PILLS.map(p => (
+                <button
+                  key={p.key}
+                  type="button"
+                  style={pillStyle(r.performs === p.key, p)}
+                  onClick={() => update(i, 'performs', p.key)}
+                >
+                  {p.key}
+                </button>
+              ))}
             </div>
             <textarea style={{ ...textareaStyle, minHeight: 36 }} placeholder="Entity-specific notes (leave blank for none)" value={r.notes} onChange={(e) => update(i, 'notes', e.target.value)} />
             <button type="button" style={dangerBtnStyle} onClick={() => remove(i)} title={`Remove ${r.entity} from this card`}>&#10005;</button>
@@ -182,25 +263,25 @@ const EntityMatrixTable = ({ rows, onChange }) => {
           onKeyDown={handleKey}
         />
         <button type="button" style={btnStyle} onClick={addEntity}>+ Add entity</button>
-        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted, #94a3b8)' }}>Adds a new row at the bottom — same fields as the rest.</span>
+        <span style={{ fontSize: '0.72rem', color: 'var(--text-muted, #94a3b8)' }}>YES / NO / OOS — three-state</span>
       </div>
     </div>
   );
 };
 
-const EditorPanel = ({ value, onChange }) => {
+const HeaderFields = ({ value, onChange }) => {
   const update = (patch) => onChange({ ...value, ...patch });
   return (
-    <div>
+    <>
       <div style={sectionWrap}>
         {fieldLabel('Procedure Name')}
         <input style={inputStyle} value={value.procedureName || ''} onChange={(e) => update({ procedureName: e.target.value })} />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '1rem' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
         <div style={sectionWrap}>
-          {fieldLabel('Modality')}
-          <input style={inputStyle} value={value.modality || ''} onChange={(e) => update({ modality: e.target.value })} />
+          {fieldLabel('Modality (short)')}
+          <input style={inputStyle} placeholder="CT, MRI, etc." value={value.modality || ''} onChange={(e) => update({ modality: e.target.value })} />
         </div>
         <div style={sectionWrap}>
           {fieldLabel('Header Image URL (optional)')}
@@ -208,15 +289,22 @@ const EditorPanel = ({ value, onChange }) => {
         </div>
       </div>
 
-      <OrderOptionsTable rows={value.orderOptions || []} onChange={(rows) => update({ orderOptions: rows })} />
-
       <div style={sectionWrap}>
-        {fieldLabel('Standard Instructions')}
-        <textarea style={textareaStyle} value={value.standardInstructions || ''} onChange={(e) => update({ standardInstructions: e.target.value })} />
+        {fieldLabel('Modality / Description blurb')}
+        <textarea style={textareaStyle} placeholder="e.g. CCTA utilizes contrast dye to visualize coronary arteries..." value={value.modalityDescription || ''} onChange={(e) => update({ modalityDescription: e.target.value })} />
       </div>
+    </>
+  );
+};
 
+const SCHEditor = ({ value, onChange }) => {
+  const update = (patch) => onChange({ ...value, ...patch });
+  return (
+    <div>
+      <HeaderFields value={value} onChange={onChange} />
+      <OrderOptionsTable rows={value.orderOptions || []} onChange={(rows) => update({ orderOptions: rows })} />
+      <BulletList label="Shared Entity Notes (apply to all performing entities)" bullets={value.sharedEntityNotes || []} onChange={(b) => update({ sharedEntityNotes: b })} />
       <EntityMatrixTable rows={value.entityMatrix || []} onChange={(rows) => update({ entityMatrix: rows })} />
-
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
         <BulletList label="STAT Orders bullets" bullets={value.stat || []} onChange={(b) => update({ stat: b })} />
         <BulletList label="ASAP / Same Day / Next Day (Non-STAT) bullets" bullets={value.asap || []} onChange={(b) => update({ asap: b })} />
@@ -227,6 +315,33 @@ const EditorPanel = ({ value, onChange }) => {
       </div>
     </div>
   );
+};
+
+const CREditor = ({ value, onChange }) => {
+  const update = (patch) => onChange({ ...value, ...patch });
+  return (
+    <div>
+      <HeaderFields value={value} onChange={onChange} />
+      <div style={sectionWrap}>
+        {fieldLabel('Description / Overview')}
+        <textarea style={{ ...textareaStyle, minHeight: 80 }} placeholder="A brief description of the exam..." value={value.description || ''} onChange={(e) => update({ description: e.target.value })} />
+      </div>
+      <EpicOrderablesTable rows={value.epicOrderables || []} onChange={(rows) => update({ epicOrderables: rows })} />
+      <TipSheetsTable rows={value.tipSheets || []} onChange={(rows) => update({ tipSheets: rows })} />
+      <div style={sectionWrap}>
+        {fieldLabel('Standard CR Notes')}
+        <textarea style={{ ...textareaStyle, minHeight: 100 }} value={value.standardCRNotes || ''} onChange={(e) => update({ standardCRNotes: e.target.value })} />
+      </div>
+      <EntityMatrixTable rows={value.entityMatrix || []} onChange={(rows) => update({ entityMatrix: rows })} />
+    </div>
+  );
+};
+
+const EditorPanel = ({ value, onChange, kind = 'SCH' }) => {
+  if (kind === 'CR') {
+    return <CREditor value={value} onChange={onChange} />;
+  }
+  return <SCHEditor value={value} onChange={onChange} />;
 };
 
 export default EditorPanel;

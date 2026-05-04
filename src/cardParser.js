@@ -1,9 +1,8 @@
 // cardParser.js
-// Parse a v11 Scheduling_x0020_Instructions HTML string into a structured object
-// the editor UI can bind to. Falls back gracefully on missing sections.
+// Parse v11/v12 card HTML strings into structured objects the editor binds to.
+// SCH cards are parsed by parseCard(); CR cards by parseCRCard(). Both fall back gracefully
+// on missing sections so legacy or partial HTML still produces a usable structure.
 
-// 20 default THR entities. Used as starter rows when a card has no Entity Matrix yet.
-// Cards may freely add more entities beyond this list — the editor supports it.
 export const DEFAULT_ENTITIES = [
   'THA', 'THAL', 'THAMH', 'THAZ', 'THB', 'THC', 'THD', 'THDN', 'THF', 'THFM',
   'THFW', 'THHEB', 'THK', 'THP', 'THPPIC', 'THPS', 'THRW', 'THS', 'THSW', 'THWP'
@@ -55,10 +54,51 @@ const parseOrderOptions = (table) => {
   return rows;
 };
 
-// Parse the Entity Matrix table.
-// Returns whatever entities are actually present in the HTML (preserving order).
-// If the matrix is missing entirely OR has fewer than 5 rows, we seed with the 20 defaults
-// so a brand-new card lands on a sensible starting grid the user can edit.
+const parseEpicOrderables = (table) => {
+  if (!table) return [];
+  const rows = [];
+  const trs = table.querySelectorAll('tr');
+  for (let i = 1; i < trs.length; i++) {
+    const tds = trs[i].querySelectorAll('td');
+    if (tds.length < 3) continue;
+    rows.push({
+      orderableName: stripTags(innerHTMLOf(tds[0])),
+      contrast: stripTags(innerHTMLOf(tds[1])),
+      epicId: stripTags(innerHTMLOf(tds[2]))
+    });
+  }
+  return rows;
+};
+
+const parseTipSheets = (table) => {
+  if (!table) return [];
+  const rows = [];
+  const trs = table.querySelectorAll('tr');
+  for (let i = 1; i < trs.length; i++) {
+    const tds = trs[i].querySelectorAll('td');
+    if (tds.length < 2) continue;
+    const title = stripTags(innerHTMLOf(tds[0]));
+    const linkEl = tds[1].querySelector('a');
+    const link = linkEl ? (linkEl.getAttribute('href') || '') : '';
+    rows.push({ title, link });
+  }
+  return rows;
+};
+
+// Three-state status classifier — handles colored bold text (YES/NO/OOS) and legacy badges.
+const classifyPerforms = (rawText) => {
+  const t = (rawText || '').toUpperCase().trim();
+  if (!t) return 'YES';
+  if (t.startsWith('OOS') || t.startsWith('OUT OF SCOPE')) return 'OOS';
+  if (t === 'NO' || t.startsWith('NO ')) return 'NO';
+  if (t.startsWith('YES')) return 'YES';
+  // Fallback by membership
+  if (t.includes('YES')) return 'YES';
+  if (t.includes('NO')) return 'NO';
+  if (t.includes('OOS')) return 'OOS';
+  return 'YES';
+};
+
 const parseEntityMatrix = (table) => {
   const rows = [];
   const seen = new Set();
@@ -70,17 +110,12 @@ const parseEntityMatrix = (table) => {
       const entity = stripTags(innerHTMLOf(tds[0])).toUpperCase().replace(/[^A-Z0-9]/g, '');
       if (!entity || seen.has(entity)) continue;
       seen.add(entity);
-      const performsText = stripTags(innerHTMLOf(tds[1])).toUpperCase();
-      let performs = '';
-      if (performsText === 'YES' || performsText.startsWith('YES')) performs = 'YES';
-      else if (performsText === 'NO' || performsText.startsWith('NO')) performs = 'NO';
+      const performs = classifyPerforms(stripTags(innerHTMLOf(tds[1])));
       let notes = stripTags(innerHTMLOf(tds[2]));
       if (notes === '—' || notes === '-' || notes === '–') notes = '';
-      rows.push({ entity, performs: performs || 'YES', notes });
+      rows.push({ entity, performs, notes });
     }
   }
-
-  // If no usable rows found, seed with the 20 defaults
   if (rows.length === 0) {
     return DEFAULT_ENTITIES.map(e => ({ entity: e, performs: 'YES', notes: '' }));
   }
@@ -102,11 +137,20 @@ const parseBulletBox = (root, headingText) => {
   return [];
 };
 
-const parseStandardInstructions = (root) => {
-  const heading = findHeadingByText(root, 'Standard Instructions');
-  if (!heading) return '';
-  const next = heading.nextElementSibling;
-  return next ? stripTags(innerHTMLOf(next)) : '';
+// Parse the Shared Entity Notes box (above the Entity Matrix). It has a heading like
+// "Shared Entity Notes — apply to all performing entities" and contains a UL.
+const parseSharedEntityNotes = (root) => {
+  const divs = root.querySelectorAll('div');
+  for (const d of divs) {
+    const txt = (d.textContent || '').toLowerCase();
+    if (txt.includes('shared entity notes')) {
+      const ul = d.querySelector('ul');
+      if (ul) {
+        return Array.from(ul.querySelectorAll('li')).map(li => stripTags(innerHTMLOf(li)));
+      }
+    }
+  }
+  return [];
 };
 
 const parseHeaderImage = (root) => {
@@ -125,26 +169,89 @@ const parseProcedureName = (root) => {
   return '';
 };
 
-const parseModalityName = (root) => {
+// Returns { modality, modalityDescription }. The modality banner has a Label "Modality"
+// followed by a bold value, optionally followed by a longer description block.
+const parseModality = (root) => {
   const heading = findHeadingByText(root, 'Modality');
-  if (!heading) return '';
-  const next = heading.nextElementSibling;
-  return next ? stripTags(innerHTMLOf(next)) : '';
+  if (!heading) return { modality: '', modalityDescription: '' };
+
+  const parent = heading.parentElement;
+  if (!parent) return { modality: '', modalityDescription: '' };
+
+  const valueDivs = parent.querySelectorAll('div');
+  const texts = Array.from(valueDivs)
+    .map(d => stripTags(innerHTMLOf(d)))
+    .filter(t => t && t.toLowerCase() !== 'modality');
+
+  const modality = texts[0] || '';
+  const modalityDescription = texts.slice(1).join(' ').trim();
+  return { modality, modalityDescription };
 };
+
+// Parse the description paragraph that lives in CR cards between the modality banner
+// and the Epic Orderables table. It's just the first non-table div in that region.
+const parseDescription = (root) => {
+  // Find all section divs (the ones that have "padding:18px 36px" pattern)
+  const sectionDivs = root.querySelectorAll('div');
+  for (const d of sectionDivs) {
+    const style = d.getAttribute('style') || '';
+    if (!style.includes('padding') || !style.includes('36px')) continue;
+    // Skip sections that contain headings like "Standard CR Notes", tables, etc.
+    if (d.querySelector('table')) continue;
+    if (d.querySelector('div')) {
+      const inner = d.querySelector('div');
+      const innerStyle = inner.getAttribute('style') || '';
+      if (innerStyle.includes('text-transform') && innerStyle.includes('uppercase')) continue;
+    }
+    const text = stripTags(innerHTMLOf(d));
+    if (text.length > 20 && text.length < 1000) return text;
+  }
+  return '';
+};
+
+// ─────────── Public parsers ───────────
 
 export const parseCard = (htmlString) => {
   const tmp = document.createElement('div');
   tmp.innerHTML = htmlString || '';
+  const { modality, modalityDescription } = parseModality(tmp);
   return {
     procedureName: parseProcedureName(tmp),
-    modality: parseModalityName(tmp),
+    modality,
+    modalityDescription,
     headerImage: parseHeaderImage(tmp),
     orderOptions: parseOrderOptions(findTableContaining(tmp, 'Visit Type', 'CPT')),
-    standardInstructions: parseStandardInstructions(tmp),
+    sharedEntityNotes: parseSharedEntityNotes(tmp),
     entityMatrix: parseEntityMatrix(findTableContaining(tmp, 'Entity', 'Performs')),
     stat: parseBulletBox(tmp, 'STAT Orders'),
     asap: parseBulletBox(tmp, 'ASAP / Same Day / Next Day (Non-STAT)'),
     specialNeeds: parseBulletBox(tmp, 'Special Needs'),
     covid: parseBulletBox(tmp, 'COVID STATUS')
+  };
+};
+
+export const parseCRCard = (htmlString) => {
+  const tmp = document.createElement('div');
+  tmp.innerHTML = htmlString || '';
+  const { modality, modalityDescription } = parseModality(tmp);
+
+  // Standard CR Notes lives in a section with that heading
+  const standardCRNotesHeading = findHeadingByText(tmp, 'Standard CR Notes');
+  let standardCRNotes = '';
+  if (standardCRNotesHeading) {
+    const next = standardCRNotesHeading.nextElementSibling;
+    standardCRNotes = next ? stripTags(innerHTMLOf(next)) : '';
+  }
+
+  return {
+    procedureName: parseProcedureName(tmp),
+    modality,
+    modalityDescription,
+    headerImage: parseHeaderImage(tmp),
+    description: parseDescription(tmp),
+    epicOrderables: parseEpicOrderables(findTableContaining(tmp, 'Orderable', 'Epic')),
+    tipSheets: parseTipSheets(findTableContaining(tmp, 'Title', 'Link')),
+    standardCRNotes,
+    entityMatrix: parseEntityMatrix(findTableContaining(tmp, 'Entity', 'Performs'))
   };
 };

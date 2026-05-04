@@ -1,13 +1,12 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { db } from './firebase';
 import { collection, onSnapshot, doc, setDoc, writeBatch } from 'firebase/firestore';
-import { parseCard } from './cardParser';
-import { buildCardHTML } from './cardBuilder';
+import { parseCard, parseCRCard } from './cardParser';
+import { buildCardHTML, buildCRCardHTML } from './cardBuilder';
 import EditorPanel from './EditorPanel';
 
-// NOTE: bundled JSON loading was intentionally removed. The site now shows ONLY what's
-// in Firestore — that prevents legacy pre-v11 cards (entity-badges + Insurance/N/A layout)
-// from leaking back into the UI. Use the "+ Upload JSON Batch" button to seed Firestore.
+// Site reads ONLY from Firestore — legacy bundled JSON loading was removed so old layouts
+// can't leak into the UI. Use "+ Upload JSON Batch" to seed Firestore.
 
 const MODALITY_MAP = {
   1: 'CT / NM',
@@ -28,7 +27,7 @@ const HtmlContent = React.memo(({ html }) => {
 });
 
 // Component for an individual Procedure item
-const ProcedureCard = React.memo(({ group, page, reviewData, onUpdateReview, onSaveProcedureHTML }) => {
+const ProcedureCard = React.memo(({ group, page, reviewData, onUpdateReview, onSaveProcedureContent }) => {
   const [comment, setComment] = useState('');
   const [savedStatus, setSavedStatus] = useState(false);
   const [editMode, setEditMode] = useState(false);
@@ -39,7 +38,7 @@ const ProcedureCard = React.memo(({ group, page, reviewData, onUpdateReview, onS
   const item = page === 'SCH' ? group.schItem : group.crItem;
   const dbKey = `${group.baseName}_${page}`.replace(/\//g, '-');
   const isFinished = reviewData?.isFinished || false;
-  const canEdit = page === 'SCH' && !!item; // Editor scoped to scheduling cards for now
+  const canEdit = !!item; // Both SCH and CR are editable now
 
   // Sync the local text box with the Firebase database
   useEffect(() => {
@@ -59,9 +58,14 @@ const ProcedureCard = React.memo(({ group, page, reviewData, onUpdateReview, onS
     onUpdateReview(dbKey, { comment, isFinished: !isFinished });
   };
 
+  // Pick the right HTML field based on which page we're on
+  const contentHTML = page === 'SCH'
+    ? item?.Scheduling_x0020_Instructions
+    : item?.Clinical_x0020_Review_x0020_Notes;
+
   const enterEditMode = () => {
     try {
-      const parsed = parseCard(item?.Scheduling_x0020_Instructions || '');
+      const parsed = page === 'SCH' ? parseCard(contentHTML || '') : parseCRCard(contentHTML || '');
       // Pre-fill procedure name from baseName if parser missed it
       if (!parsed.procedureName) parsed.procedureName = group.baseName;
       setEditorState(parsed);
@@ -82,8 +86,9 @@ const ProcedureCard = React.memo(({ group, page, reviewData, onUpdateReview, onS
   const saveEdit = async () => {
     if (!editorState) return;
     try {
-      const newHTML = buildCardHTML(editorState);
-      await onSaveProcedureHTML(item.Procedure, newHTML);
+      const newHTML = page === 'SCH' ? buildCardHTML(editorState) : buildCRCardHTML(editorState);
+      const fieldName = page === 'SCH' ? 'Scheduling_x0020_Instructions' : 'Clinical_x0020_Review_x0020_Notes';
+      await onSaveProcedureContent(item.Procedure, fieldName, newHTML);
       setEditorSaved(true);
       setTimeout(() => setEditorSaved(false), 2500);
       // Stay in edit mode so user can keep tweaking
@@ -92,8 +97,6 @@ const ProcedureCard = React.memo(({ group, page, reviewData, onUpdateReview, onS
       setEditorError('Save failed: ' + (e.message || 'unknown error'));
     }
   };
-
-  const contentHTML = item?.Scheduling_x0020_Instructions;
 
   return (
     <div className={`procedure-card ${isFinished ? 'finished' : ''}`}>
@@ -140,11 +143,11 @@ const ProcedureCard = React.memo(({ group, page, reviewData, onUpdateReview, onS
               {editorError}
             </div>
           )}
-          <EditorPanel value={editorState} onChange={setEditorState} />
+          <EditorPanel value={editorState} onChange={setEditorState} kind={page} />
           <details style={{ marginBottom: '1rem' }}>
             <summary style={{ cursor: 'pointer', color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '0.5rem' }}>Live preview (click to expand)</summary>
             <div className="html-content legacy-content-wrapper" style={{ border: '1px solid rgba(255,255,255,0.1)', borderRadius: '0.5rem', padding: '1rem', background: '#fff' }}>
-              <HtmlContent html={buildCardHTML(editorState)} />
+              <HtmlContent html={page === 'SCH' ? buildCardHTML(editorState) : buildCRCardHTML(editorState)} />
             </div>
           </details>
           <div className="button-group">
@@ -279,14 +282,13 @@ export default function App() {
     }
   };
 
-  // Persist edited HTML back to the procedures collection (the editor's save handler)
-  const saveProcedureHTML = useCallback(async (procedureName, newHTML) => {
+  // Persist edited content (HTML for either Scheduling_x0020_Instructions or
+  // Clinical_x0020_Review_x0020_Notes) back to the procedures collection.
+  const saveProcedureContent = useCallback(async (procedureName, fieldName, newHTML) => {
     const cleanId = procedureName.replace(/\//g, '-');
-    await setDoc(
-      doc(db, 'procedures', cleanId),
-      { Scheduling_x0020_Instructions: newHTML },
-      { merge: true }
-    );
+    const patch = {};
+    patch[fieldName] = newHTML;
+    await setDoc(doc(db, 'procedures', cleanId), patch, { merge: true });
   }, []);
 
   const { groupedData, availableModalities } = useMemo(() => {
@@ -326,7 +328,10 @@ export default function App() {
 
       const term = searchTerm.toLowerCase();
       const inBaseName = group.baseName.toLowerCase().includes(term);
-      const inContent = item.Scheduling_x0020_Instructions?.toLowerCase().includes(term);
+      const fieldHTML = activePage === 'SCH'
+        ? item.Scheduling_x0020_Instructions
+        : item.Clinical_x0020_Review_x0020_Notes;
+      const inContent = fieldHTML?.toLowerCase().includes(term);
       const matchesSearch = inBaseName || inContent;
 
       const matchesModality = selectedModality === 'All' || group.ModalityId?.toString() === selectedModality;
@@ -377,13 +382,12 @@ export default function App() {
     document.body.removeChild(link);
   };
 
-  // Export all current procedures (filtered by active page = SCH or CR) as a Power Automate update JSON.
+  // Export current procedures (filtered by active page = SCH or CR) as a Power Automate update JSON.
   const exportPowerAutomateJSON = () => {
     if (dbProcedures.length === 0) {
       alert("No procedures in the database yet. Upload a JSON Batch first.");
       return;
     }
-    // Active page determines the suffix to export. Default: all SCH items.
     const suffix = activePage === 'SCH' ? '_SCH' : '_CR';
     const items = dbProcedures
       .filter(p => p.Procedure && p.Procedure.endsWith(suffix))
@@ -521,7 +525,7 @@ export default function App() {
               page={activePage}
               reviewData={reviewsDB[dbKey]}
               onUpdateReview={updateReviewInDB}
-              onSaveProcedureHTML={saveProcedureHTML}
+              onSaveProcedureContent={saveProcedureContent}
             />
           );
         })}
