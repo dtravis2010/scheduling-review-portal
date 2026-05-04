@@ -269,6 +269,51 @@ const EntityMatrixTable = ({ rows, onChange }) => {
   );
 };
 
+const OutOfScopeToggle = ({ value, onChange }) => {
+  const isOOS = !!value.outOfScope;
+  const wrapStyle = {
+    background: isOOS ? 'rgba(249,115,22,0.12)' : 'rgba(255,255,255,0.03)',
+    border: `1px solid ${isOOS ? 'rgba(249,115,22,0.5)' : 'rgba(255,255,255,0.08)'}`,
+    borderRadius: '0.75rem',
+    padding: '1rem 1.25rem',
+    marginBottom: '1rem'
+  };
+  return (
+    <div style={wrapStyle}>
+      <label style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem', cursor: 'pointer' }}>
+        <input
+          type="checkbox"
+          checked={isOOS}
+          onChange={(e) => onChange({ ...value, outOfScope: e.target.checked })}
+          style={{ marginTop: 4, cursor: 'pointer', width: 18, height: 18 }}
+        />
+        <div style={{ flex: 1 }}>
+          <div style={{ fontWeight: 700, color: isOOS ? '#fdba74' : 'var(--text-primary, #f1f5f9)', fontSize: '0.95rem' }}>
+            This procedure is OUT OF SCOPE for all entities
+          </div>
+          <div style={{ fontSize: '0.78rem', color: 'var(--text-muted, #94a3b8)', marginTop: 4 }}>
+            Use for procedures like CT biopsies that no entity schedules through the central team.
+            When checked, the saved card collapses to a single OUT OF SCOPE banner — all other
+            tables (Order Options, Entity Matrix, etc.) are hidden but data is preserved if you
+            uncheck later.
+          </div>
+        </div>
+      </label>
+      {isOOS && (
+        <div style={{ marginTop: '0.75rem' }}>
+          {fieldLabel('Reason / instruction shown on the OOS banner')}
+          <textarea
+            style={{ ...textareaStyle, minHeight: 60 }}
+            placeholder="This procedure is Out of Scope for all entities. Transfer the caller to the entity schedulers."
+            value={value.outOfScopeReason || ''}
+            onChange={(e) => onChange({ ...value, outOfScopeReason: e.target.value })}
+          />
+        </div>
+      )}
+    </div>
+  );
+};
+
 const HeaderFields = ({ value, onChange }) => {
   const update = (patch) => onChange({ ...value, ...patch });
   return (
@@ -299,40 +344,52 @@ const HeaderFields = ({ value, onChange }) => {
 
 const SCHEditor = ({ value, onChange }) => {
   const update = (patch) => onChange({ ...value, ...patch });
+  const isOOS = !!value.outOfScope;
   return (
     <div>
+      <OutOfScopeToggle value={value} onChange={onChange} />
       <HeaderFields value={value} onChange={onChange} />
-      <OrderOptionsTable rows={value.orderOptions || []} onChange={(rows) => update({ orderOptions: rows })} />
-      <BulletList label="Shared Entity Notes (apply to all performing entities)" bullets={value.sharedEntityNotes || []} onChange={(b) => update({ sharedEntityNotes: b })} />
-      <EntityMatrixTable rows={value.entityMatrix || []} onChange={(rows) => update({ entityMatrix: rows })} />
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-        <BulletList label="STAT Orders bullets" bullets={value.stat || []} onChange={(b) => update({ stat: b })} />
-        <BulletList label="ASAP / Same Day / Next Day (Non-STAT) bullets" bullets={value.asap || []} onChange={(b) => update({ asap: b })} />
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-        <BulletList label="Special Needs bullets" bullets={value.specialNeeds || []} onChange={(b) => update({ specialNeeds: b })} />
-        <BulletList label="COVID STATUS bullets" bullets={value.covid || []} onChange={(b) => update({ covid: b })} />
-      </div>
+      {!isOOS && (
+        <>
+          <OrderOptionsTable rows={value.orderOptions || []} onChange={(rows) => update({ orderOptions: rows })} />
+          <BulletList label="Shared Entity Notes (apply to all performing entities)" bullets={value.sharedEntityNotes || []} onChange={(b) => update({ sharedEntityNotes: b })} />
+          <EntityMatrixTable rows={value.entityMatrix || []} onChange={(rows) => update({ entityMatrix: rows })} />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+            <BulletList label="STAT Orders bullets" bullets={value.stat || []} onChange={(b) => update({ stat: b })} />
+            <BulletList label="ASAP / Same Day / Next Day (Non-STAT) bullets" bullets={value.asap || []} onChange={(b) => update({ asap: b })} />
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+            <BulletList label="Special Needs bullets" bullets={value.specialNeeds || []} onChange={(b) => update({ specialNeeds: b })} />
+            <BulletList label="COVID STATUS bullets" bullets={value.covid || []} onChange={(b) => update({ covid: b })} />
+          </div>
+        </>
+      )}
     </div>
   );
 };
 
 const CREditor = ({ value, onChange }) => {
   const update = (patch) => onChange({ ...value, ...patch });
+  const isOOS = !!value.outOfScope;
   return (
     <div>
+      <OutOfScopeToggle value={value} onChange={onChange} />
       <HeaderFields value={value} onChange={onChange} />
-      <div style={sectionWrap}>
-        {fieldLabel('Description / Overview')}
-        <textarea style={{ ...textareaStyle, minHeight: 80 }} placeholder="A brief description of the exam..." value={value.description || ''} onChange={(e) => update({ description: e.target.value })} />
-      </div>
-      <EpicOrderablesTable rows={value.epicOrderables || []} onChange={(rows) => update({ epicOrderables: rows })} />
-      <TipSheetsTable rows={value.tipSheets || []} onChange={(rows) => update({ tipSheets: rows })} />
-      <div style={sectionWrap}>
-        {fieldLabel('Standard CR Notes')}
-        <textarea style={{ ...textareaStyle, minHeight: 100 }} value={value.standardCRNotes || ''} onChange={(e) => update({ standardCRNotes: e.target.value })} />
-      </div>
-      <EntityMatrixTable rows={value.entityMatrix || []} onChange={(rows) => update({ entityMatrix: rows })} />
+      {!isOOS && (
+        <>
+          <div style={sectionWrap}>
+            {fieldLabel('Description / Overview')}
+            <textarea style={{ ...textareaStyle, minHeight: 80 }} placeholder="A brief description of the exam..." value={value.description || ''} onChange={(e) => update({ description: e.target.value })} />
+          </div>
+          <EpicOrderablesTable rows={value.epicOrderables || []} onChange={(rows) => update({ epicOrderables: rows })} />
+          <TipSheetsTable rows={value.tipSheets || []} onChange={(rows) => update({ tipSheets: rows })} />
+          <div style={sectionWrap}>
+            {fieldLabel('Standard CR Notes')}
+            <textarea style={{ ...textareaStyle, minHeight: 100 }} value={value.standardCRNotes || ''} onChange={(e) => update({ standardCRNotes: e.target.value })} />
+          </div>
+          <EntityMatrixTable rows={value.entityMatrix || []} onChange={(rows) => update({ entityMatrix: rows })} />
+        </>
+      )}
     </div>
   );
 };

@@ -209,13 +209,36 @@ const parseDescription = (root) => {
   return '';
 };
 
+// Detect a procedure-level Out of Scope banner. We render it as a centered orange box
+// containing the literal phrase "OUT OF SCOPE — ALL ENTITIES" — that's the marker.
+const parseOutOfScope = (root) => {
+  const text = (root.textContent || '').toUpperCase();
+  if (!text.includes('OUT OF SCOPE') || !text.includes('ALL ENTITIES')) {
+    return { outOfScope: false, outOfScopeReason: '' };
+  }
+  // Pull the reason text — the body div sits right after the title div in our banner.
+  const divs = root.querySelectorAll('div');
+  for (const d of divs) {
+    const t = (d.textContent || '').trim().toUpperCase();
+    if (t === 'OUT OF SCOPE — ALL ENTITIES' || t === 'OUT OF SCOPE - ALL ENTITIES' || t === 'OUT OF SCOPE — ALL ENTITIES') {
+      const next = d.nextElementSibling;
+      const reason = next ? stripTags(innerHTMLOf(next)) : '';
+      return { outOfScope: true, outOfScopeReason: reason };
+    }
+  }
+  return { outOfScope: true, outOfScopeReason: '' };
+};
+
 // ─────────── Public parsers ───────────
 
 export const parseCard = (htmlString) => {
   const tmp = document.createElement('div');
   tmp.innerHTML = htmlString || '';
   const { modality, modalityDescription } = parseModality(tmp);
+  const oos = parseOutOfScope(tmp);
   return {
+    outOfScope: oos.outOfScope,
+    outOfScopeReason: oos.outOfScopeReason,
     procedureName: parseProcedureName(tmp),
     modality,
     modalityDescription,
@@ -234,6 +257,7 @@ export const parseCRCard = (htmlString) => {
   const tmp = document.createElement('div');
   tmp.innerHTML = htmlString || '';
   const { modality, modalityDescription } = parseModality(tmp);
+  const oos = parseOutOfScope(tmp);
 
   // Standard CR Notes lives in a section with that heading
   const standardCRNotesHeading = findHeadingByText(tmp, 'Standard CR Notes');
@@ -244,6 +268,8 @@ export const parseCRCard = (htmlString) => {
   }
 
   return {
+    outOfScope: oos.outOfScope,
+    outOfScopeReason: oos.outOfScopeReason,
     procedureName: parseProcedureName(tmp),
     modality,
     modalityDescription,

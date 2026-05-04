@@ -222,6 +222,19 @@ const standardCRNotesSection = (text) => {
   return `<div style="${wrap}"><div style="${head}">Standard CR Notes</div><div style="${body}">${esc(text)}</div></div>`;
 };
 
+// Big orange "Out of Scope for all entities" banner. Used when a procedure is flagged
+// outOfScope=true at the top level — the card collapses to header + modality + this banner.
+const outOfScopeBanner = (reason) => {
+  const wrap = styleAttr('padding:32px 36px;border-bottom:1px solid #eee');
+  const box = styleAttr('background:#fff3e0;border:2px solid #e65100;border-radius:12px;padding:28px 32px;text-align:center');
+  const label = styleAttr('font-size:12px;color:#e65100;font-weight:800;text-transform:uppercase;letter-spacing:2px;margin-bottom:10px');
+  const title = styleAttr('font-size:28px;color:#e65100;font-weight:800;margin-bottom:14px;letter-spacing:0.5px');
+  const body = styleAttr('font-size:16px;color:#5d3a00;line-height:1.6;font-weight:500');
+  const defaultReason = 'This procedure is Out of Scope for all entities. Transfer the caller to the entity schedulers.';
+  const text = (reason && reason.trim()) ? reason : defaultReason;
+  return `<div style="${wrap}"><div style="${box}"><div style="${label}">Status</div><div style="${title}">OUT OF SCOPE &mdash; ALL ENTITIES</div><div style="${body}">${esc(text)}</div></div></div>`;
+};
+
 // ─────────── Card builders ───────────
 
 const cardShell = (innerSections) => {
@@ -232,6 +245,15 @@ const cardShell = (innerSections) => {
 };
 
 export const buildCardHTML = (data) => {
+  if (data.outOfScope) {
+    const sections = [
+      headerSection(data.procedureName, data.headerImage, 'SCHEDULING INSTRUCTIONS'),
+      modalityBanner(data.modality, data.modalityDescription),
+      outOfScopeBanner(data.outOfScopeReason)
+    ].join('');
+    return cardShell(sections);
+  }
+
   const orange = { bg: '#fff3e0', border: '#e65100', label: '#e65100' };
   const blue = { bg: '#e3f2fd', border: '#0077c8', label: '#0077c8' };
   const green = { bg: '#f0f7f3', border: '#009543', label: '#009543' };
@@ -259,6 +281,14 @@ export const buildCardHTML = (data) => {
 };
 
 export const buildCRCardHTML = (data) => {
+  if (data.outOfScope) {
+    const sections = [
+      headerSection(data.procedureName, data.headerImage, 'CLINICAL REVIEW NOTES'),
+      modalityBanner(data.modality, data.modalityDescription),
+      outOfScopeBanner(data.outOfScopeReason)
+    ].join('');
+    return cardShell(sections);
+  }
   const sections = [
     headerSection(data.procedureName, data.headerImage, 'CLINICAL REVIEW NOTES'),
     modalityBanner(data.modality, data.modalityDescription),
