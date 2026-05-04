@@ -2,7 +2,9 @@
 // Parse a v11 Scheduling_x0020_Instructions HTML string into a structured object
 // the editor UI can bind to. Falls back gracefully on missing sections.
 
-export const ALL_ENTITIES = [
+// 20 default THR entities. Used as starter rows when a card has no Entity Matrix yet.
+// Cards may freely add more entities beyond this list — the editor supports it.
+export const DEFAULT_ENTITIES = [
   'THA', 'THAL', 'THAMH', 'THAZ', 'THB', 'THC', 'THD', 'THDN', 'THF', 'THFM',
   'THFW', 'THHEB', 'THK', 'THP', 'THPPIC', 'THPS', 'THRW', 'THS', 'THSW', 'THWP'
 ];
@@ -53,28 +55,36 @@ const parseOrderOptions = (table) => {
   return rows;
 };
 
+// Parse the Entity Matrix table.
+// Returns whatever entities are actually present in the HTML (preserving order).
+// If the matrix is missing entirely OR has fewer than 5 rows, we seed with the 20 defaults
+// so a brand-new card lands on a sensible starting grid the user can edit.
 const parseEntityMatrix = (table) => {
-  const byEntity = {};
+  const rows = [];
+  const seen = new Set();
   if (table) {
     const trs = table.querySelectorAll('tr');
     for (let i = 1; i < trs.length; i++) {
       const tds = trs[i].querySelectorAll('td');
       if (tds.length < 3) continue;
-      const entity = stripTags(innerHTMLOf(tds[0])).toUpperCase().replace(/[^A-Z]/g, '');
+      const entity = stripTags(innerHTMLOf(tds[0])).toUpperCase().replace(/[^A-Z0-9]/g, '');
+      if (!entity || seen.has(entity)) continue;
+      seen.add(entity);
       const performsText = stripTags(innerHTMLOf(tds[1])).toUpperCase();
       let performs = '';
       if (performsText === 'YES' || performsText.startsWith('YES')) performs = 'YES';
       else if (performsText === 'NO' || performsText.startsWith('NO')) performs = 'NO';
       let notes = stripTags(innerHTMLOf(tds[2]));
       if (notes === '—' || notes === '-' || notes === '–') notes = '';
-      byEntity[entity] = { performs, notes };
+      rows.push({ entity, performs: performs || 'YES', notes });
     }
   }
-  return ALL_ENTITIES.map(e => ({
-    entity: e,
-    performs: byEntity[e]?.performs || 'YES',
-    notes: byEntity[e]?.notes || ''
-  }));
+
+  // If no usable rows found, seed with the 20 defaults
+  if (rows.length === 0) {
+    return DEFAULT_ENTITIES.map(e => ({ entity: e, performs: 'YES', notes: '' }));
+  }
+  return rows;
 };
 
 // Find a colored callout box by its heading text, return the bullets inside it
@@ -108,7 +118,6 @@ const parseProcedureName = (root) => {
   const divs = root.querySelectorAll('div');
   for (const d of divs) {
     const style = d.getAttribute('style') || '';
-    // The big title uses font-size:32px (with or without colon-encoding)
     if (/font-size\s*[:&#58;]\s*32px/.test(style)) {
       return stripTags(innerHTMLOf(d));
     }

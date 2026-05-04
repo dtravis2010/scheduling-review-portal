@@ -5,9 +5,9 @@ import { parseCard } from './cardParser';
 import { buildCardHTML } from './cardBuilder';
 import EditorPanel from './EditorPanel';
 
-// Automatically load all .json files in the 'src' folder (like data.json, Batch_MRI.json)
-const jsonFiles = import.meta.glob('./*.json', { eager: true });
-const data = Object.values(jsonFiles).flatMap(module => module.default || module);
+// NOTE: bundled JSON loading was intentionally removed. The site now shows ONLY what's
+// in Firestore — that prevents legacy pre-v11 cards (entity-badges + Insurance/N/A layout)
+// from leaking back into the UI. Use the "+ Upload JSON Batch" button to seed Firestore.
 
 const MODALITY_MAP = {
   1: 'CT / NM',
@@ -291,22 +291,16 @@ export default function App() {
 
   const { groupedData, availableModalities } = useMemo(() => {
     const groups = {};
-
-    // Combine local code-based JSON with dynamically fetched DB procedures
-    const combinedMap = new Map();
-    data.forEach(item => combinedMap.set(item.Procedure, item));
-    dbProcedures.forEach(item => combinedMap.set(item.Procedure, item));
-
-    const combinedData = Array.from(combinedMap.values());
     const mods = new Set();
 
-    combinedData.forEach(item => {
+    dbProcedures.forEach(item => {
+      if (!item || !item.Procedure) return;
       if (item.ModalityId !== undefined && item.ModalityId !== null) {
         mods.add(item.ModalityId);
       }
 
       const isCR = item.Procedure.endsWith('_CR');
-      let baseName = item.Procedure.replace(/_CR$|_SCH$/, '');
+      const baseName = item.Procedure.replace(/_CR$|_SCH$/, '');
 
       if (!groups[baseName]) {
         groups[baseName] = {

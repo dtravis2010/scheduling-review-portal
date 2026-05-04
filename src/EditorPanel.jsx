@@ -2,8 +2,7 @@
 // Structured editor for a single SCH card. Receives a `value` (parsed structure)
 // and an `onChange(updated)` callback. Renders form fields for every section.
 
-import React from 'react';
-import { ALL_ENTITIES } from './cardParser';
+import React, { useState } from 'react';
 
 const fieldLabel = (text) => (
   <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--accent-blue, #60a5fa)', fontWeight: 700, marginBottom: 6 }}>{text}</div>
@@ -110,10 +109,30 @@ const OrderOptionsTable = ({ rows, onChange }) => {
 };
 
 const EntityMatrixTable = ({ rows, onChange }) => {
+  const [newEntity, setNewEntity] = useState('');
+
   const update = (i, field, v) => {
     const next = rows.map((r, idx) => idx === i ? { ...r, [field]: v } : r);
     onChange(next);
   };
+  const remove = (i) => onChange(rows.filter((_, idx) => idx !== i));
+  const addEntity = () => {
+    const code = newEntity.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (!code) return;
+    if (rows.some(r => r.entity.toUpperCase() === code)) {
+      alert(`Entity ${code} already exists in the matrix.`);
+      return;
+    }
+    onChange([...rows, { entity: code, performs: 'YES', notes: '' }]);
+    setNewEntity('');
+  };
+  const handleKey = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      addEntity();
+    }
+  };
+
   const yesBtn = (active) => ({
     padding: '0.25rem 0.75rem',
     border: '1px solid',
@@ -136,20 +155,34 @@ const EntityMatrixTable = ({ rows, onChange }) => {
     fontSize: '0.75rem',
     cursor: 'pointer'
   });
+
   return (
     <div style={sectionWrap}>
-      {fieldLabel('Entity Matrix')}
+      {fieldLabel(`Entity Matrix (${rows?.length || 0} entities)`)}
       <div style={{ display: 'grid', gap: 8 }}>
         {(rows || []).map((r, i) => (
-          <div key={r.entity || i} style={{ display: 'grid', gridTemplateColumns: '80px 130px 1fr', gap: 8, alignItems: 'center' }}>
+          <div key={r.entity || i} style={{ display: 'grid', gridTemplateColumns: '90px 130px 1fr 32px', gap: 8, alignItems: 'center' }}>
             <div style={{ fontWeight: 700, color: 'var(--accent-blue, #60a5fa)', fontSize: '0.85rem' }}>{r.entity}</div>
             <div style={{ display: 'flex', gap: 6 }}>
               <button type="button" style={yesBtn(r.performs === 'YES')} onClick={() => update(i, 'performs', 'YES')}>YES</button>
               <button type="button" style={noBtn(r.performs === 'NO')} onClick={() => update(i, 'performs', 'NO')}>NO</button>
             </div>
             <textarea style={{ ...textareaStyle, minHeight: 36 }} placeholder="Entity-specific notes (leave blank for none)" value={r.notes} onChange={(e) => update(i, 'notes', e.target.value)} />
+            <button type="button" style={dangerBtnStyle} onClick={() => remove(i)} title={`Remove ${r.entity} from this card`}>&#10005;</button>
           </div>
         ))}
+      </div>
+
+      <div style={{ marginTop: '0.75rem', display: 'flex', gap: 6, alignItems: 'center', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '0.75rem' }}>
+        <input
+          style={{ ...inputStyle, width: 180, textTransform: 'uppercase' }}
+          placeholder="New entity code (e.g. THXYZ)"
+          value={newEntity}
+          onChange={(e) => setNewEntity(e.target.value)}
+          onKeyDown={handleKey}
+        />
+        <button type="button" style={btnStyle} onClick={addEntity}>+ Add entity</button>
+        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted, #94a3b8)' }}>Adds a new row at the bottom — same fields as the rest.</span>
       </div>
     </div>
   );
