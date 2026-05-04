@@ -230,7 +230,7 @@ const outOfScopeBanner = (reason) => {
   const label = styleAttr('font-size:12px;color:#e65100;font-weight:800;text-transform:uppercase;letter-spacing:2px;margin-bottom:10px');
   const title = styleAttr('font-size:28px;color:#e65100;font-weight:800;margin-bottom:14px;letter-spacing:0.5px');
   const body = styleAttr('font-size:16px;color:#5d3a00;line-height:1.6;font-weight:500');
-  const defaultReason = 'This procedure is Out of Scope for all entities. Transfer the caller to the entity schedulers.';
+  const defaultReason = 'This procedure is Out of Scope for all entities. Transfer to entities.';
   const text = (reason && reason.trim()) ? reason : defaultReason;
   return `<div style="${wrap}"><div style="${box}"><div style="${label}">Status</div><div style="${title}">OUT OF SCOPE &mdash; ALL ENTITIES</div><div style="${body}">${esc(text)}</div></div></div>`;
 };

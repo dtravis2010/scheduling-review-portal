@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { db } from './firebase';
-import { collection, onSnapshot, doc, setDoc, writeBatch } from 'firebase/firestore';
+import { collection, onSnapshot, doc, setDoc, writeBatch, deleteDoc } from 'firebase/firestore';
 import { parseCard, parseCRCard } from './cardParser';
 import { buildCardHTML, buildCRCardHTML } from './cardBuilder';
 import EditorPanel from './EditorPanel';
@@ -27,7 +27,7 @@ const HtmlContent = React.memo(({ html }) => {
 });
 
 // Component for an individual Procedure item
-const ProcedureCard = React.memo(({ group, page, reviewData, onUpdateReview, onSaveProcedureContent }) => {
+const ProcedureCard = React.memo(({ group, page, reviewData, onUpdateReview, onSaveProcedureContent, onDeleteProcedure }) => {
   const [comment, setComment] = useState('');
   const [savedStatus, setSavedStatus] = useState(false);
   const [editMode, setEditMode] = useState(false);
@@ -109,6 +109,20 @@ const ProcedureCard = React.memo(({ group, page, reviewData, onUpdateReview, onS
     }
   };
 
+  const handleDeleteProcedure = async () => {
+    const both = !!(group.schItem && group.crItem);
+    const msg = both
+      ? `Delete the entire "${group.baseName}" procedure?\n\nThis removes BOTH the Scheduling and Clinical Review entries from the database. Cannot be undone.`
+      : `Delete "${group.baseName}_${page}" from the database?\n\nCannot be undone.`;
+    if (!window.confirm(msg)) return;
+    try {
+      await onDeleteProcedure(group.baseName, both);
+    } catch (e) {
+      console.error(e);
+      alert('Delete failed: ' + (e.message || 'unknown error'));
+    }
+  };
+
   return (
     <div className={`procedure-card ${isFinished ? 'finished' : ''}`}>
       <div className="procedure-header">
@@ -133,6 +147,26 @@ const ProcedureCard = React.memo(({ group, page, reviewData, onUpdateReview, onS
               }}
             >
               {editMode ? '✕ Cancel' : '✏ Edit'}
+            </button>
+          )}
+          {!editMode && (
+            <button
+              type="button"
+              className="btn"
+              onClick={handleDeleteProcedure}
+              title={`Delete this procedure from the database`}
+              style={{
+                padding: '0.25rem 0.75rem',
+                background: 'rgba(248,113,113,0.12)',
+                border: '1px solid rgba(248,113,113,0.35)',
+                color: '#fca5a5',
+                fontSize: '0.8rem',
+                fontWeight: 600,
+                borderRadius: '999px',
+                cursor: 'pointer'
+              }}
+            >
+              🗑 Delete
             </button>
           )}
           <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', marginLeft: 'auto', background: isFinished ? 'rgba(52, 211, 153, 0.2)' : 'rgba(255, 255, 255, 0.1)', padding: '0.25rem 0.75rem', borderRadius: '999px', fontSize: '0.875rem' }}>
@@ -304,6 +338,25 @@ export default function App() {
     patch[fieldName] = newHTML;
     await setDoc(doc(db, 'procedures', cleanId), patch, { merge: true });
   }, []);
+
+  // Delete a procedure (and optionally its sibling on the other page) from
+  // both procedures and reviews collections.
+  const deleteProcedure = useCallback(async (baseName, deleteBoth) => {
+    const targets = deleteBoth ? [`${baseName}_SCH`, `${baseName}_CR`] : [`${baseName}_${activePage}`];
+    for (const proc of targets) {
+      const cleanId = proc.replace(/\//g, '-');
+      try {
+        await deleteDoc(doc(db, 'procedures', cleanId));
+      } catch (e) {
+        console.warn(`procedures/${cleanId} delete:`, e.message);
+      }
+      try {
+        await deleteDoc(doc(db, 'reviews', cleanId));
+      } catch (e) {
+        console.warn(`reviews/${cleanId} delete:`, e.message);
+      }
+    }
+  }, [activePage]);
 
   const { groupedData, availableModalities } = useMemo(() => {
     const groups = {};
@@ -540,6 +593,7 @@ export default function App() {
               reviewData={reviewsDB[dbKey]}
               onUpdateReview={updateReviewInDB}
               onSaveProcedureContent={saveProcedureContent}
+              onDeleteProcedure={deleteProcedure}
             />
           );
         })}

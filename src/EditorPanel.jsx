@@ -310,7 +310,7 @@ const OutOfScopeToggle = ({ value, onChange }) => {
           {fieldLabel('Reason / instruction shown on the OOS banner')}
           <textarea
             style={{ ...textareaStyle, minHeight: 60 }}
-            placeholder="This procedure is Out of Scope for all entities. Transfer the caller to the entity schedulers."
+            placeholder="This procedure is Out of Scope for all entities. Transfer to entities."
             value={value.outOfScopeReason || ''}
             onChange={(e) => onChange({ ...value, outOfScopeReason: e.target.value })}
           />
