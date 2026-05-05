@@ -689,15 +689,26 @@ export default function App() {
       return;
     }
     const suffix = activePage === 'SCH' ? '_SCH' : '_CR';
+    // The Power Automate flow ("Upsert Consolidated Scheduling Reference") writes
+    // EVERY card's HTML into the SharePoint Scheduling_x0020_Instructions column,
+    // regardless of whether it's SCH or CR — the _SCH / _CR suffix on Procedure
+    // is what tells them apart. The Clinical_x0020_Review_x0020_Notes column is
+    // a legacy field that must always be empty in the upload payload, otherwise
+    // the flow ignores the CR HTML stored there and silently writes blanks.
     const items = dbProcedures
       .filter(p => p.Procedure && p.Procedure.endsWith(suffix))
-      .map(p => ({
-        Entity0Id: p.Entity0Id ?? 24,
-        ModalityId: p.ModalityId,
-        Procedure: p.Procedure,
-        Scheduling_x0020_Instructions: p.Scheduling_x0020_Instructions || '',
-        Clinical_x0020_Review_x0020_Notes: p.Clinical_x0020_Review_x0020_Notes || ''
-      }));
+      .map(p => {
+        const html = p.Procedure.endsWith('_CR')
+          ? (p.Clinical_x0020_Review_x0020_Notes || p.Scheduling_x0020_Instructions || '')
+          : (p.Scheduling_x0020_Instructions || '');
+        return {
+          Entity0Id: p.Entity0Id ?? 24,
+          ModalityId: p.ModalityId,
+          Procedure: p.Procedure,
+          Scheduling_x0020_Instructions: html,
+          Clinical_x0020_Review_x0020_Notes: ''
+        };
+      });
 
     if (items.length === 0) {
       alert(`No ${activePage} procedures found in the database to export.`);
