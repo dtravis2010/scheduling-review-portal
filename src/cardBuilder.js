@@ -61,6 +61,9 @@ const modalityBanner = (modality, description) => {
 // Three-state entity matrix: YES (green), NO (red), OOS (orange).
 // Status rendered as colored bold text (matches the live SharePoint pattern).
 const entityMatrixSection = (rows) => {
+  // Hide when there's no matrix at all (vs. the default 20-entity case which
+  // is informative even with all-YES rows).
+  if (!rows || rows.length === 0) return '';
   const wrap = styleAttr('padding:18px 36px;border-bottom:1px solid #eee');
   const heading = styleAttr('font-size:13px;font-weight:800;color:#003366;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px');
   const tableStyle = styleAttr("width:100%;border-collapse:collapse;border:1px solid #e0e0e0;font-family:'Segoe UI', Arial, Helvetica, sans-serif;margin-top:12px");
@@ -113,6 +116,11 @@ const sharedEntityNotesBlock = (bullets) => {
 // ─────────── SCH-specific sections ───────────
 
 const orderOptionsSection = (rows, sharedEntityNotes) => {
+  // Hide the section when there are no order options AND no shared entity
+  // notes to display (avoids rendering an empty Visit Type / Code header table).
+  const noRows = !rows || rows.length === 0;
+  const noNotes = !sharedEntityNotes || sharedEntityNotes.length === 0;
+  if (noRows && noNotes) return '';
   const sectionWrap = styleAttr('padding:18px 36px;border-bottom:1px solid #eee');
   const tableStyle = styleAttr("width:100%;border-collapse:collapse;border:1px solid #e0e0e0;font-family:'Segoe UI', Arial, Helvetica, sans-serif");
   const headerRow = styleAttr('background:#003366;color:#ffffff');
@@ -133,7 +141,10 @@ const orderOptionsSection = (rows, sharedEntityNotes) => {
   }).join('');
 
   const noteBlock = sharedEntityNotesBlock(sharedEntityNotes);
-  return `<div style="${sectionWrap}"><table style="${tableStyle}">${headerHTML}${rowsHTML}</table>${noteBlock}</div>`;
+  // Suppress the empty table when there are no order rows; only the shared
+  // entity notes block remains visible.
+  const tableHTML = noRows ? '' : `<table style="${tableStyle}">${headerHTML}${rowsHTML}</table>`;
+  return `<div style="${sectionWrap}">${tableHTML}${noteBlock}</div>`;
 };
 
 const calloutBox = (heading, color, bullets) => {
@@ -165,6 +176,9 @@ const descriptionBlock = (text) => {
 };
 
 const epicOrderablesSection = (rows) => {
+  // Hide the entire section when there's nothing to display — keeps unstyled
+  // placeholder tables out of partially-filled cards.
+  if (!rows || rows.length === 0) return '';
   const sectionWrap = styleAttr('padding:18px 36px;border-bottom:1px solid #eee');
   const heading = styleAttr('font-size:13px;font-weight:800;color:#003366;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px');
   const tableStyle = styleAttr("width:100%;border-collapse:collapse;border:1px solid #e0e0e0;font-family:'Segoe UI', Arial, Helvetica, sans-serif");
@@ -186,12 +200,11 @@ const epicOrderablesSection = (rows) => {
 };
 
 const tipSheetsSection = (rows) => {
+  // Hide the entire section when there's no tip sheet content. Previous behavior
+  // rendered "No tip sheets linked yet." which clutters partially-filled cards.
+  if (!rows || rows.length === 0) return '';
   const sectionWrap = styleAttr('padding:18px 36px;border-bottom:1px solid #eee');
   const heading = styleAttr('font-size:13px;font-weight:800;color:#003366;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px');
-  const empty = styleAttr('font-size:14px;line-height:1.6;color:#666;font-style:italic');
-  if (!rows || rows.length === 0) {
-    return `<div style="${sectionWrap}"><div style="${heading}">Pertinent Tip Sheets</div><div style="${empty}">No tip sheets linked yet.</div></div>`;
-  }
   const tableStyle = styleAttr("width:100%;border-collapse:collapse;border:1px solid #e0e0e0;font-family:'Segoe UI', Arial, Helvetica, sans-serif");
   const headerRow = styleAttr('background:#003366;color:#ffffff');
   const thTitle = styleAttr('text-align:left;padding:10px 12px;font-size:12px;letter-spacing:1px;text-transform:uppercase;border:1px solid #003366');
