@@ -1,9 +1,15 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { db } from './firebase';
 import { collection, onSnapshot, doc, setDoc, writeBatch, deleteDoc } from 'firebase/firestore';
-import { parseCard, parseCRCard } from './cardParser';
+import { parseCard, parseCRCard, DEFAULT_ENTITIES } from './cardParser';
 import { buildCardHTML, buildCRCardHTML } from './cardBuilder';
 import EditorPanel from './EditorPanel';
+import {
+  STANDARD_STAT_BULLETS,
+  STANDARD_ASAP_BULLETS,
+  STANDARD_SPECIAL_NEEDS_BULLETS,
+  STANDARD_COVID_BULLETS
+} from './standardCallouts';
 
 // Site reads ONLY from Firestore — legacy bundled JSON loading was removed so old layouts
 // can't leak into the UI. Use "+ Upload JSON Batch" to seed Firestore.
@@ -14,6 +20,155 @@ const MODALITY_MAP = {
   3: 'GI & Fluoro',
   4: 'Vascular Ultrasound',
   5: 'General Ultrasound'
+};
+
+// Modal: create a brand-new procedure (SCH and/or CR Firestore docs).
+const NewProcedureModal = ({ isOpen, onClose, onCreate, existingProcedures }) => {
+  const [name, setName] = useState('');
+  const [modalityId, setModalityId] = useState(1);
+  const [makeSCH, setMakeSCH] = useState(true);
+  const [makeCR, setMakeCR] = useState(true);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  React.useEffect(() => {
+    if (isOpen) {
+      setName('');
+      setModalityId(1);
+      setMakeSCH(true);
+      setMakeCR(true);
+      setError('');
+      setBusy(false);
+    }
+  }, [isOpen]);
+
+  if (!isOpen) return null;
+
+  const handleSubmit = async () => {
+    setError('');
+    const trimmed = name.trim().toUpperCase();
+    if (!trimmed) {
+      setError('Procedure name is required.');
+      return;
+    }
+    if (!makeSCH && !makeCR) {
+      setError('Pick at least one of Scheduling or Clinical Review.');
+      return;
+    }
+    // Uniqueness check
+    const existsSCH = existingProcedures.some(p => p.Procedure === `${trimmed}_SCH`);
+    const existsCR = existingProcedures.some(p => p.Procedure === `${trimmed}_CR`);
+    if (makeSCH && existsSCH) {
+      setError(`A scheduling card named "${trimmed}_SCH" already exists.`);
+      return;
+    }
+    if (makeCR && existsCR) {
+      setError(`A clinical review card named "${trimmed}_CR" already exists.`);
+      return;
+    }
+
+    setBusy(true);
+    try {
+      await onCreate({ baseName: trimmed, modalityId, makeSCH, makeCR });
+      onClose();
+    } catch (e) {
+      setError(e.message || 'Create failed.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const overlayStyle = {
+    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100
+  };
+  const modalStyle = {
+    background: 'var(--card-bg, #0f172a)',
+    border: '1px solid rgba(255,255,255,0.12)',
+    borderRadius: '0.75rem', padding: '1.5rem',
+    width: 'min(520px, 90vw)', boxShadow: '0 20px 60px rgba(0,0,0,0.5)'
+  };
+  const labelStyle = { fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#60a5fa', fontWeight: 700, marginBottom: 6, display: 'block' };
+  const inputStyle = {
+    width: '100%', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: '0.375rem', padding: '0.5rem 0.75rem', color: 'var(--text-primary, #f1f5f9)',
+    fontSize: '0.9rem', fontFamily: 'inherit'
+  };
+
+  return (
+    <div style={overlayStyle} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style={modalStyle}>
+        <h2 style={{ margin: 0, marginBottom: '1rem', fontSize: '1.25rem', color: 'var(--text-primary, #f1f5f9)' }}>+ New Procedure</h2>
+
+        <div style={{ marginBottom: '1rem' }}>
+          <label style={labelStyle}>Procedure Name</label>
+          <input
+            style={inputStyle}
+            placeholder="e.g. CT HEAD"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            autoFocus
+          />
+          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted, #94a3b8)', marginTop: 4 }}>
+            Use ALL CAPS. The system appends _SCH and _CR automatically.
+          </div>
+        </div>
+
+        <div style={{ marginBottom: '1rem' }}>
+          <label style={labelStyle}>Modality</label>
+          <select
+            style={{ ...inputStyle, cursor: 'pointer' }}
+            value={modalityId}
+            onChange={(e) => setModalityId(Number(e.target.value))}
+          >
+            <option value={1}>CT / NM</option>
+            <option value={2}>MRI</option>
+            <option value={3}>GI & Fluoro</option>
+            <option value={4}>Vascular Ultrasound</option>
+            <option value={5}>General Ultrasound</option>
+          </select>
+        </div>
+
+        <div style={{ marginBottom: '1rem' }}>
+          <label style={labelStyle}>Create</label>
+          <div style={{ display: 'flex', gap: '1rem' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: '0.9rem', color: 'var(--text-primary, #f1f5f9)' }}>
+              <input type="checkbox" checked={makeSCH} onChange={(e) => setMakeSCH(e.target.checked)} />
+              Scheduling card
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: '0.9rem', color: 'var(--text-primary, #f1f5f9)' }}>
+              <input type="checkbox" checked={makeCR} onChange={(e) => setMakeCR(e.target.checked)} />
+              Clinical Review card
+            </label>
+          </div>
+        </div>
+
+        {error && (
+          <div style={{ background: 'rgba(248,113,113,0.15)', border: '1px solid rgba(248,113,113,0.4)', color: '#fca5a5', padding: '0.5rem 0.75rem', borderRadius: '0.375rem', marginBottom: '1rem', fontSize: '0.85rem' }}>
+            {error}
+          </div>
+        )}
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+          <button type="button" className="btn" onClick={onClose} disabled={busy} style={{ background: 'rgba(255,255,255,0.08)', color: 'var(--text-muted)' }}>
+            Cancel
+          </button>
+          <button type="button" className="btn btn-primary" onClick={handleSubmit} disabled={busy}>
+            {busy ? 'Creating…' : 'Create Procedure'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Map ModalityId → display name (used for new-card defaults)
+const MODALITY_SHORT = {
+  1: 'CT',
+  2: 'MRI',
+  3: 'GI / Fluoro',
+  4: 'Vascular Ultrasound',
+  5: 'Ultrasound'
 };
 
 // Memoized HTML content to prevent re-renders when typing in comments
@@ -243,6 +398,7 @@ export default function App() {
   const [reviewsDB, setReviewsDB] = useState({});
   const [dbProcedures, setDbProcedures] = useState([]);
   const [isUploading, setIsUploading] = useState(false);
+  const [showNewModal, setShowNewModal] = useState(false);
 
   // Sync with Firestore
   useEffect(() => {
@@ -337,6 +493,83 @@ export default function App() {
     const patch = {};
     patch[fieldName] = newHTML;
     await setDoc(doc(db, 'procedures', cleanId), patch, { merge: true });
+  }, []);
+
+  // Build default v12 SCH/CR HTML for a brand-new procedure and write to Firestore.
+  const createNewProcedure = useCallback(async ({ baseName, modalityId, makeSCH, makeCR }) => {
+    const modalityShort = MODALITY_SHORT[modalityId] || 'CT';
+    const defaultEntityMatrix = DEFAULT_ENTITIES.map(e => ({ entity: e, performs: 'YES', notes: '' }));
+
+    const writes = [];
+
+    if (makeSCH) {
+      const schData = {
+        outOfScope: false,
+        outOfScopeReason: '',
+        procedureName: baseName,
+        modality: modalityShort,
+        modalityDescription: '',
+        headerImage: '',
+        orderOptions: [],
+        sharedEntityNotes: [],
+        entityMatrix: defaultEntityMatrix,
+        stat: [...STANDARD_STAT_BULLETS],
+        asap: [...STANDARD_ASAP_BULLETS],
+        specialNeeds: [...STANDARD_SPECIAL_NEEDS_BULLETS],
+        covid: [...STANDARD_COVID_BULLETS]
+      };
+      const schHtml = buildCardHTML(schData);
+      const schProc = `${baseName}_SCH`;
+      const schId = schProc.replace(/\//g, '-');
+      writes.push({
+        id: schId,
+        proc: schProc,
+        data: {
+          Entity0Id: 24,
+          ModalityId: modalityId,
+          Procedure: schProc,
+          Scheduling_x0020_Instructions: schHtml,
+          Clinical_x0020_Review_x0020_Notes: ''
+        }
+      });
+    }
+
+    if (makeCR) {
+      const crData = {
+        outOfScope: false,
+        outOfScopeReason: '',
+        procedureName: baseName,
+        modality: modalityShort,
+        modalityDescription: '',
+        headerImage: '',
+        description: '',
+        epicOrderables: [],
+        tipSheets: [],
+        standardCRNotes: '',
+        entityMatrix: defaultEntityMatrix
+      };
+      const crHtml = buildCRCardHTML(crData);
+      const crProc = `${baseName}_CR`;
+      const crId = crProc.replace(/\//g, '-');
+      writes.push({
+        id: crId,
+        proc: crProc,
+        data: {
+          Entity0Id: 24,
+          ModalityId: modalityId,
+          Procedure: crProc,
+          Scheduling_x0020_Instructions: '',
+          Clinical_x0020_Review_x0020_Notes: crHtml
+        }
+      });
+    }
+
+    const batch = writeBatch(db);
+    for (const w of writes) {
+      batch.set(doc(db, 'procedures', w.id), w.data, { merge: true });
+      batch.set(doc(db, 'reviews', w.id), { comment: '', isFinished: false }, { merge: true });
+    }
+    await batch.commit();
   }, []);
 
   // Delete a procedure (and optionally its sibling on the other page) from
@@ -486,6 +719,12 @@ export default function App() {
 
   return (
     <div className="app-container">
+      <NewProcedureModal
+        isOpen={showNewModal}
+        onClose={() => setShowNewModal(false)}
+        onCreate={createNewProcedure}
+        existingProcedures={dbProcedures}
+      />
       <div className="header">
         <h1>Scheduling Review Portal</h1>
         <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -510,6 +749,15 @@ export default function App() {
               disabled={isUploading}
             />
           </label>
+          <button
+            type="button"
+            className="btn"
+            onClick={() => setShowNewModal(true)}
+            title="Create a brand-new procedure"
+            style={{ background: 'rgba(34,197,94,0.18)', border: '1px solid rgba(34,197,94,0.4)', color: '#86efac', fontWeight: 600 }}
+          >
+            + New Procedure
+          </button>
           <button className="btn" onClick={exportCommentsToCSV} title="Export reviewer comments + finished status as CSV" style={{ background: 'rgba(255,255,255,0.08)', color: 'var(--text-primary)' }}>
             Comments CSV
           </button>
