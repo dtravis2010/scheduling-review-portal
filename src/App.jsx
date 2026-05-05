@@ -244,6 +244,38 @@ const ProcedureCard = React.memo(({ group, page, reviewData, onUpdateReview, onS
       const newHTML = page === 'SCH' ? buildCardHTML(editorState) : buildCRCardHTML(editorState);
       const fieldName = page === 'SCH' ? 'Scheduling_x0020_Instructions' : 'Clinical_x0020_Review_x0020_Notes';
       await onSaveProcedureContent(item.Procedure, fieldName, newHTML);
+
+      // Auto-couple OOS state to the sibling card. When OOS is checked on either
+      // SCH or CR, the other side should also display as OOS so the procedure
+      // shows the same status across both pages. We only propagate
+      // outOfScope=true (we never auto-uncheck the sibling) to avoid silently
+      // wiping the sibling's content.
+      if (editorState.outOfScope) {
+        const siblingPage = page === 'SCH' ? 'CR' : 'SCH';
+        const siblingItem = page === 'SCH' ? group.crItem : group.schItem;
+        if (siblingItem) {
+          const siblingHTML = siblingPage === 'SCH'
+            ? (siblingItem.Scheduling_x0020_Instructions || '')
+            : (siblingItem.Clinical_x0020_Review_x0020_Notes || '');
+          const siblingParsed = siblingPage === 'SCH'
+            ? parseCard(siblingHTML)
+            : parseCRCard(siblingHTML);
+          const siblingData = {
+            ...siblingParsed,
+            procedureName: siblingParsed.procedureName || group.baseName,
+            outOfScope: true,
+            outOfScopeReason: editorState.outOfScopeReason || ''
+          };
+          const siblingNewHTML = siblingPage === 'SCH'
+            ? buildCardHTML(siblingData)
+            : buildCRCardHTML(siblingData);
+          const siblingField = siblingPage === 'SCH'
+            ? 'Scheduling_x0020_Instructions'
+            : 'Clinical_x0020_Review_x0020_Notes';
+          await onSaveProcedureContent(siblingItem.Procedure, siblingField, siblingNewHTML);
+        }
+      }
+
       setEditorSaved(true);
       setTimeout(() => setEditorSaved(false), 2500);
       // Stay in edit mode so user can keep tweaking
