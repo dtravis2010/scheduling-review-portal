@@ -274,6 +274,17 @@ const ProcedureCard = React.memo(({ group, page, reviewData, onUpdateReview, onS
             : 'Clinical_x0020_Review_x0020_Notes';
           await onSaveProcedureContent(siblingItem.Procedure, siblingField, siblingNewHTML);
         }
+
+        // Auto-finish review state when OOS is set. OOS procs need no review
+        // attention so we mark BOTH SCH and CR review docs as finished.
+        // updateReviewInDB writes with { merge: true }, so passing only
+        // { isFinished: true } leaves existing comments intact. Like the
+        // OOS-to-sibling propagation above, we never auto-unfinish —
+        // unchecking OOS leaves isFinished alone.
+        const baseId = group.baseName.replace(/\//g, '-');
+        await onUpdateReview(`${baseId}_SCH`, { isFinished: true });
+        await onUpdateReview(`${baseId}_CR`,  { isFinished: true });
+        setIsFinished(true);
       }
 
       setEditorSaved(true);
