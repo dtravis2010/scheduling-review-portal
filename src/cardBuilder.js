@@ -84,14 +84,32 @@ const modalityBanner = (modality, description) => {
 // Three-state entity matrix: YES (green), NO (red), OOS (orange).
 // Status rendered as colored bold text (matches the live SharePoint pattern).
 // `kind` is 'SCH' or 'CR' — picks which side of the entity link to use.
-// `entityLinks` is an optional map { THA: { sch: '...', cr: '...' }, ... }; when
-// a URL exists for the row's entity it becomes a clickable hyperlink on the
-// abbreviation cell. Missing or empty URLs render as plain text — backwards
-// compatible with cards built before entity links existed.
+// `entityLinks` is an optional map { THA: { sch: '...', cr: '...' }, ... }.
+//   • When a URL exists for an entity, the abbreviation cell becomes a
+//     clickable hyperlink. Missing/empty URLs render as plain text.
+//   • When entityLinks has any keys, it ALSO serves as the canonical entity
+//     list — the matrix is rebuilt to contain exactly those entities, sorted
+//     alphabetically, with each row's performs/notes preserved from the input
+//     `rows` (or defaulted to YES/empty if the entity is new).
+//   • When entityLinks is null/empty, the input `rows` are rendered as-is —
+//     keeps backwards compatibility for headless scripts that don't load the
+//     canonical list.
 const entityMatrixSection = (rows, kind = 'SCH', entityLinks = null) => {
+  // If a canonical entity list is provided, rebuild the row set so:
+  //   1. Every canonical entity appears (new entities propagate automatically).
+  //   2. Order is strictly alphabetical (independent of save history).
+  //   3. Per-entity performs/notes are preserved from the input rows.
+  //   4. Legacy entities not in the canonical list are dropped.
+  let displayRows = rows || [];
+  if (entityLinks && Object.keys(entityLinks).length > 0) {
+    const canonical = Object.keys(entityLinks).sort();
+    const byEntity = {};
+    for (const r of displayRows) byEntity[r.entity] = r;
+    displayRows = canonical.map(e => byEntity[e] || { entity: e, performs: 'YES', notes: '' });
+  }
   // Hide when there's no matrix at all (vs. the default 20-entity case which
   // is informative even with all-YES rows).
-  if (!rows || rows.length === 0) return '';
+  if (!displayRows || displayRows.length === 0) return '';
   const wrap = styleAttr('padding:18px 36px;border-bottom:1px solid #eee');
   const heading = styleAttr('font-size:13px;font-weight:800;color:#003366;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px');
   const tableStyle = styleAttr("width:100%;border-collapse:collapse;border:1px solid #e0e0e0;font-family:'Segoe UI', Arial, Helvetica, sans-serif;margin-top:12px");
@@ -122,7 +140,7 @@ const entityMatrixSection = (rows, kind = 'SCH', entityLinks = null) => {
   };
 
   const headerHTML = `<tr style="${headerRowStyle}"><th style="${th}">Entity</th><th style="${thCenter}">Performs</th><th style="${thNotes}">Entity Notes</th></tr>`;
-  const rowsHTML = rows.map((r, idx) => {
+  const rowsHTML = displayRows.map((r, idx) => {
     const stripe = styleAttr(`background:${idx % 2 === 0 ? '#ffffff' : '#f8f9fa'}`);
     const status = (r.performs || 'YES').toUpperCase();
     const colorStyle = styleAttr(`color:${colorFor(status)}`);
@@ -134,11 +152,17 @@ const entityMatrixSection = (rows, kind = 'SCH', entityLinks = null) => {
   return `<div style="${wrap}"><div style="${heading}">Entity Matrix</div><table style="${tableStyle}">${headerHTML}${rowsHTML}</table></div>`;
 };
 
-const reportFooter = () => {
+// Report Issue footer — mailto link to THRES Communications. Subject line
+// changes based on which kind of card the user is viewing so the receiving
+// inbox can route SCH vs CR feedback differently.
+//   SCH card → subject "EPSI SCH"
+//   CR card  → subject "EPSI CR"
+const reportFooter = (kind = 'SCH') => {
   const wrap = styleAttr('text-align:center;padding:10px 0');
   const p = styleAttr('font-size:12px;color:#888;margin:0 0 8px');
   const a = styleAttr('display:inline-block;background:#003366;color:#fff;padding:8px 24px;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none;border-bottom:3px solid #001a33');
-  return `<div style="${wrap}"><p style="${p}"><em>To report a scheduling instruction issue, include the Exam, Entity, and Notes.</em></p><a href="mailto${C}THRESCommunications@texashealth.org?subject=Scheduling%20Issue&body=Entity%3A%0AExam%3A%0ANotes%3A" style="${a}">Report Issue</a></div>`;
+  const subject = kind === 'CR' ? 'EPSI%20CR' : 'EPSI%20SCH';
+  return `<div style="${wrap}"><p style="${p}"><em>To report a scheduling instruction issue, include the Exam, Entity, and Notes.</em></p><a href="mailto${C}THRESCommunications@texashealth.org?subject=${subject}&body=Entity%3A%0AExam%3A%0ANotes%3A" style="${a}">Report Issue</a></div>`;
 };
 
 // Shared Entity Notes — small blue-tinted callout block above the Entity Matrix.
@@ -289,11 +313,11 @@ const outOfScopeBanner = (reason) => {
 
 // ─────────── Card builders ───────────
 
-const cardShell = (innerSections) => {
+const cardShell = (innerSections, kind = 'SCH') => {
   const outerWrap = styleAttr("font-family:'Segoe UI', Arial, Helvetica, sans-serif;max-width:1400px;margin:0 auto");
   const topAccent = styleAttr('background:#003366;height:6px;border-radius:12px 12px 0 0');
   const cardBox = styleAttr('background:#ffffff;border:1px solid #e0e0e0;border-top:none;border-radius:0 0 12px 12px;overflow:hidden;margin-bottom:20px');
-  return `<div style="${outerWrap}"><div style="${topAccent}"></div><div style="${cardBox}">${innerSections}</div>${reportFooter()}</div>`;
+  return `<div style="${outerWrap}"><div style="${topAccent}"></div><div style="${cardBox}">${innerSections}</div>${reportFooter(kind)}</div>`;
 };
 
 // `entityLinks` (optional) — passed through to entityMatrixSection so each
@@ -309,7 +333,7 @@ export const buildCardHTML = (data, entityLinks = null) => {
       modalityBanner(data.modality, data.modalityDescription),
       outOfScopeBanner(data.outOfScopeReason)
     ].join('');
-    return cardShell(sections);
+    return cardShell(sections, 'SCH');
   }
 
   const orange = { bg: '#fff3e0', border: '#e65100', label: '#e65100' };
@@ -335,7 +359,7 @@ export const buildCardHTML = (data, entityLinks = null) => {
     sncovid
   ].join('');
 
-  return cardShell(sections);
+  return cardShell(sections, 'SCH');
 };
 
 export const buildCRCardHTML = (data, entityLinks = null) => {
@@ -345,7 +369,7 @@ export const buildCRCardHTML = (data, entityLinks = null) => {
       modalityBanner(data.modality, data.modalityDescription),
       outOfScopeBanner(data.outOfScopeReason)
     ].join('');
-    return cardShell(sections);
+    return cardShell(sections, 'CR');
   }
   const sections = [
     headerSection(data.procedureName, data.headerImage, 'CLINICAL REVIEW NOTES'),
@@ -357,5 +381,5 @@ export const buildCRCardHTML = (data, entityLinks = null) => {
     entityMatrixSection(data.entityMatrix || [], 'CR', entityLinks)
   ].join('');
 
-  return cardShell(sections);
+  return cardShell(sections, 'CR');
 };
