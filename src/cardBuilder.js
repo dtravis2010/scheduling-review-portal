@@ -30,6 +30,29 @@ const safeHref = (raw) => {
   return esc(trimmed);
 };
 
+// Render a notes string with markdown-style links — `[label](https://…)` becomes
+// a clickable anchor. Non-link text is HTML-escaped. Used in the Entity Matrix
+// notes column so an entity row can include a tip-sheet hyperlink.
+// Colons in href URLs are encoded as &#58; to match the SharePoint-safe pattern
+// already used elsewhere in this builder.
+const notesWithLinks = (text) => {
+  if (!text) return '';
+  const linkStyle = styleAttr('color:#0077c8;text-decoration:underline');
+  const re = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
+  const parts = [];
+  let last = 0;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > last) parts.push(esc(text.slice(last, m.index)));
+    const label = m[1];
+    const url = m[2].replace(/:/g, C); // SharePoint-safe colon encoding in href
+    parts.push(`<a href="${url}" target="_blank" rel="noopener" style="${linkStyle}">${esc(label)}</a>`);
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) parts.push(esc(text.slice(last)));
+  return parts.join('');
+};
+
 // ─────────── Shared sections ───────────
 
 const headerSection = (procedureName, headerImage, label) => {
@@ -88,7 +111,7 @@ const entityMatrixSection = (rows) => {
     const status = (r.performs || 'YES').toUpperCase();
     const colorStyle = styleAttr(`color:${colorFor(status)}`);
     const statusCell = `<span style="${colorStyle}"><strong>${esc(status)}</strong></span>`;
-    const notesText = r.notes && r.notes.trim() ? esc(r.notes) : '<br />';
+    const notesText = r.notes && r.notes.trim() ? notesWithLinks(r.notes) : '<br />';
     return `<tr style="${stripe}"><td style="${tdEntity}">${esc(r.entity)}</td><td style="${tdStatus}">${statusCell}</td><td style="${tdNotes}">${notesText}</td></tr>`;
   }).join('');
 

@@ -99,6 +99,20 @@ const classifyPerforms = (rawText) => {
   return 'YES';
 };
 
+// Pull notes out of a <td>, converting any <a href="…">label</a> into
+// markdown-style `[label](url)` so the URL round-trips through parse → build.
+// Decodes the SharePoint colon-encoding (&#58;) back to literal ':' so the
+// stored note matches what the user originally typed.
+const notesCellToMarkdown = (td) => {
+  if (!td) return '';
+  let html = innerHTMLOf(td);
+  html = html.replace(/<a\s+[^>]*href="([^"]+)"[^>]*>([^<]+)<\/a>/gi, (_m, href, label) => {
+    const decoded = href.replace(/&#58;/g, ':');
+    return `[${label}](${decoded})`;
+  });
+  return stripTags(html);
+};
+
 const parseEntityMatrix = (table) => {
   const rows = [];
   const seen = new Set();
@@ -111,7 +125,7 @@ const parseEntityMatrix = (table) => {
       if (!entity || seen.has(entity)) continue;
       seen.add(entity);
       const performs = classifyPerforms(stripTags(innerHTMLOf(tds[1])));
-      let notes = stripTags(innerHTMLOf(tds[2]));
+      let notes = notesCellToMarkdown(tds[2]);
       if (notes === '—' || notes === '-' || notes === '–') notes = '';
       rows.push({ entity, performs, notes });
     }
