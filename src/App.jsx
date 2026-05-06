@@ -4,6 +4,7 @@ import { collection, onSnapshot, doc, setDoc, writeBatch, deleteDoc } from 'fire
 import { parseCard, parseCRCard, DEFAULT_ENTITIES } from './cardParser';
 import { buildCardHTML, buildCRCardHTML } from './cardBuilder';
 import EditorPanel from './EditorPanel';
+import EntityLinksPage from './EntityLinksPage';
 import {
   STANDARD_STAT_BULLETS,
   STANDARD_ASAP_BULLETS,
@@ -182,7 +183,7 @@ const HtmlContent = React.memo(({ html }) => {
 });
 
 // Component for an individual Procedure item
-const ProcedureCard = React.memo(({ group, page, reviewData, onUpdateReview, onSaveProcedureContent, onDeleteProcedure }) => {
+const ProcedureCard = React.memo(({ group, page, reviewData, onUpdateReview, onSaveProcedureContent, onDeleteProcedure, entityLinks }) => {
   const [comment, setComment] = useState('');
   const [savedStatus, setSavedStatus] = useState(false);
   const [editMode, setEditMode] = useState(false);
@@ -241,7 +242,7 @@ const ProcedureCard = React.memo(({ group, page, reviewData, onUpdateReview, onS
   const saveEdit = async () => {
     if (!editorState) return false;
     try {
-      const newHTML = page === 'SCH' ? buildCardHTML(editorState) : buildCRCardHTML(editorState);
+      const newHTML = page === 'SCH' ? buildCardHTML(editorState, entityLinks) : buildCRCardHTML(editorState, entityLinks);
       const fieldName = page === 'SCH' ? 'Scheduling_x0020_Instructions' : 'Clinical_x0020_Review_x0020_Notes';
       await onSaveProcedureContent(item.Procedure, fieldName, newHTML);
 
@@ -267,8 +268,8 @@ const ProcedureCard = React.memo(({ group, page, reviewData, onUpdateReview, onS
             outOfScopeReason: editorState.outOfScopeReason || ''
           };
           const siblingNewHTML = siblingPage === 'SCH'
-            ? buildCardHTML(siblingData)
-            : buildCRCardHTML(siblingData);
+            ? buildCardHTML(siblingData, entityLinks)
+            : buildCRCardHTML(siblingData, entityLinks);
           const siblingField = siblingPage === 'SCH'
             ? 'Scheduling_x0020_Instructions'
             : 'Clinical_x0020_Review_x0020_Notes';
@@ -390,7 +391,7 @@ const ProcedureCard = React.memo(({ group, page, reviewData, onUpdateReview, onS
           <details style={{ marginBottom: '1rem' }}>
             <summary style={{ cursor: 'pointer', color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '0.5rem' }}>Live preview (click to expand)</summary>
             <div className="html-content legacy-content-wrapper" style={{ border: '1px solid rgba(255,255,255,0.1)', borderRadius: '0.5rem', padding: '1rem', background: '#fff' }}>
-              <HtmlContent html={page === 'SCH' ? buildCardHTML(editorState) : buildCRCardHTML(editorState)} />
+              <HtmlContent html={page === 'SCH' ? buildCardHTML(editorState, entityLinks) : buildCRCardHTML(editorState, entityLinks)} />
             </div>
           </details>
           <div className="button-group">
@@ -436,10 +437,11 @@ const ProcedureCard = React.memo(({ group, page, reviewData, onUpdateReview, onS
 export default function App() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedModality, setSelectedModality] = useState('All');
-  const [activePage, setActivePage] = useState('SCH'); // 'SCH' or 'CR'
+  const [activePage, setActivePage] = useState('SCH'); // 'SCH', 'CR', or 'ENTITY_LINKS'
   const [activeTab, setActiveTab] = useState('pending'); // 'pending' or 'finished'
   const [reviewsDB, setReviewsDB] = useState({});
   const [dbProcedures, setDbProcedures] = useState([]);
+  const [entityLinks, setEntityLinks] = useState({}); // { THA: {sch, cr}, ... }
   const [isUploading, setIsUploading] = useState(false);
   const [showNewModal, setShowNewModal] = useState(false);
 
@@ -465,9 +467,20 @@ export default function App() {
       console.error("Error reading procedures from Firebase:", error);
     });
 
+    // Subscribe to entityLinks — keyed by entity code, fields { sch, cr }.
+    // Used by cardBuilder to wrap entity abbreviations in <a> tags.
+    const unsubEntityLinks = onSnapshot(collection(db, "entityLinks"), (snapshot) => {
+      const map = {};
+      snapshot.forEach(d => { map[d.id] = d.data(); });
+      setEntityLinks(map);
+    }, (error) => {
+      console.error("Error reading entityLinks from Firebase:", error);
+    });
+
     return () => {
       unsubReviews();
       unsubProcedures();
+      unsubEntityLinks();
     };
   }, []);
 
@@ -561,7 +574,7 @@ export default function App() {
         specialNeeds: [...STANDARD_SPECIAL_NEEDS_BULLETS],
         covid: [...STANDARD_COVID_BULLETS]
       };
-      const schHtml = buildCardHTML(schData);
+      const schHtml = buildCardHTML(schData, entityLinks);
       const schProc = `${baseName}_SCH`;
       const schId = schProc.replace(/\//g, '-');
       writes.push({
@@ -591,7 +604,7 @@ export default function App() {
         standardCRNotes: '',
         entityMatrix: defaultEntityMatrix
       };
-      const crHtml = buildCRCardHTML(crData);
+      const crHtml = buildCRCardHTML(crData, entityLinks);
       const crProc = `${baseName}_CR`;
       const crId = crProc.replace(/\//g, '-');
       writes.push({
@@ -613,7 +626,7 @@ export default function App() {
       batch.set(doc(db, 'reviews', w.id), { comment: '', isFinished: false }, { merge: true });
     }
     await batch.commit();
-  }, []);
+  }, [entityLinks]);
 
   // Delete a procedure (and optionally its sibling on the other page) from
   // both procedures and reviews collections.
@@ -738,12 +751,24 @@ export default function App() {
     // is what tells them apart. The Clinical_x0020_Review_x0020_Notes column is
     // a legacy field that must always be empty in the upload payload, otherwise
     // the flow ignores the CR HTML stored there and silently writes blanks.
+    // Rebuild HTML on export using current entityLinks. Ensures hyperlinks
+    // on entity abbreviations reflect the latest URLs even if the user forgot
+    // to run "Regenerate All Cards" after editing entity links. Falls back
+    // to the stored HTML if a card can't be parsed.
     const items = dbProcedures
       .filter(p => p.Procedure && p.Procedure.endsWith(suffix))
       .map(p => {
-        const html = p.Procedure.endsWith('_CR')
+        const isCR = p.Procedure.endsWith('_CR');
+        const storedHtml = isCR
           ? (p.Clinical_x0020_Review_x0020_Notes || p.Scheduling_x0020_Instructions || '')
           : (p.Scheduling_x0020_Instructions || '');
+        let html = storedHtml;
+        try {
+          const parsed = isCR ? parseCRCard(storedHtml) : parseCard(storedHtml);
+          html = isCR ? buildCRCardHTML(parsed, entityLinks) : buildCardHTML(parsed, entityLinks);
+        } catch (err) {
+          console.warn(`Export: could not rebuild ${p.Procedure}, using stored HTML`, err);
+        }
         return {
           Entity0Id: p.Entity0Id ?? 24,
           ModalityId: p.ModalityId,
@@ -836,7 +861,19 @@ export default function App() {
         >
           Clinical Review
         </div>
+        <div
+          className={`tab ${activePage === 'ENTITY_LINKS' ? 'active' : ''}`}
+          onClick={() => setActivePage('ENTITY_LINKS')}
+          style={{ fontWeight: 700, fontSize: '1rem' }}
+        >
+          Entity Links
+        </div>
       </div>
+
+      {activePage === 'ENTITY_LINKS' && (
+        <EntityLinksPage entityLinks={entityLinks} />
+      )}
+      {activePage !== 'ENTITY_LINKS' && (<>
 
       <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem' }}>
         <input
@@ -896,6 +933,7 @@ export default function App() {
               onUpdateReview={updateReviewInDB}
               onSaveProcedureContent={saveProcedureContent}
               onDeleteProcedure={deleteProcedure}
+              entityLinks={entityLinks}
             />
           );
         })}
@@ -910,6 +948,7 @@ export default function App() {
           </div>
         )}
       </div>
+      </>)}
     </div>
   );
 }

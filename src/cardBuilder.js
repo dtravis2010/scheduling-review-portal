@@ -83,7 +83,12 @@ const modalityBanner = (modality, description) => {
 
 // Three-state entity matrix: YES (green), NO (red), OOS (orange).
 // Status rendered as colored bold text (matches the live SharePoint pattern).
-const entityMatrixSection = (rows) => {
+// `kind` is 'SCH' or 'CR' — picks which side of the entity link to use.
+// `entityLinks` is an optional map { THA: { sch: '...', cr: '...' }, ... }; when
+// a URL exists for the row's entity it becomes a clickable hyperlink on the
+// abbreviation cell. Missing or empty URLs render as plain text — backwards
+// compatible with cards built before entity links existed.
+const entityMatrixSection = (rows, kind = 'SCH', entityLinks = null) => {
   // Hide when there's no matrix at all (vs. the default 20-entity case which
   // is informative even with all-YES rows).
   if (!rows || rows.length === 0) return '';
@@ -97,12 +102,23 @@ const entityMatrixSection = (rows) => {
   const tdEntity = styleAttr('padding:10px 12px;font-size:13px;line-height:1.5;border:1px solid #e0e0e0;text-align:left;font-weight:700;color:#003366');
   const tdStatus = styleAttr('padding:10px 12px;font-size:13px;line-height:1.5;border:1px solid #e0e0e0;text-align:center');
   const tdNotes = styleAttr('padding:10px 12px;font-size:13px;color:#333;line-height:1.5;border:1px solid #e0e0e0;text-align:left');
+  const entityLinkStyle = styleAttr('color:#003366;text-decoration:underline');
 
   const colorFor = (status) => {
     if (status === 'YES') return '#009543';
     if (status === 'NO') return '#ed0033';
     if (status === 'OOS') return '#ff6600';
     return '#888';
+  };
+
+  // Wrap entity abbreviation in <a> when a URL is configured for the kind.
+  const sideKey = kind === 'CR' ? 'cr' : 'sch';
+  const entityCellInner = (entity) => {
+    const link = entityLinks && entityLinks[entity];
+    const url = link && link[sideKey];
+    if (!url) return esc(entity);
+    const safeUrl = String(url).replace(/:/g, C);
+    return `<a href="${safeUrl}" target="_blank" rel="noopener" style="${entityLinkStyle}">${esc(entity)}</a>`;
   };
 
   const headerHTML = `<tr style="${headerRowStyle}"><th style="${th}">Entity</th><th style="${thCenter}">Performs</th><th style="${thNotes}">Entity Notes</th></tr>`;
@@ -112,7 +128,7 @@ const entityMatrixSection = (rows) => {
     const colorStyle = styleAttr(`color:${colorFor(status)}`);
     const statusCell = `<span style="${colorStyle}"><strong>${esc(status)}</strong></span>`;
     const notesText = r.notes && r.notes.trim() ? notesWithLinks(r.notes) : '<br />';
-    return `<tr style="${stripe}"><td style="${tdEntity}">${esc(r.entity)}</td><td style="${tdStatus}">${statusCell}</td><td style="${tdNotes}">${notesText}</td></tr>`;
+    return `<tr style="${stripe}"><td style="${tdEntity}">${entityCellInner(r.entity)}</td><td style="${tdStatus}">${statusCell}</td><td style="${tdNotes}">${notesText}</td></tr>`;
   }).join('');
 
   return `<div style="${wrap}"><div style="${heading}">Entity Matrix</div><table style="${tableStyle}">${headerHTML}${rowsHTML}</table></div>`;
@@ -280,7 +296,13 @@ const cardShell = (innerSections) => {
   return `<div style="${outerWrap}"><div style="${topAccent}"></div><div style="${cardBox}">${innerSections}</div>${reportFooter()}</div>`;
 };
 
-export const buildCardHTML = (data) => {
+// `entityLinks` (optional) — passed through to entityMatrixSection so each
+// entity abbreviation becomes a clickable hyperlink to the appropriate
+// (SCH or CR) entity reference page. Pass an object like
+//   { THA: { sch: 'https://…', cr: 'https://…' }, … }
+// from the React App layer; it stays optional so headless callers (scripts)
+// can omit it and get plain-text entity cells (backwards compatible).
+export const buildCardHTML = (data, entityLinks = null) => {
   if (data.outOfScope) {
     const sections = [
       headerSection(data.procedureName, data.headerImage, 'SCHEDULING INSTRUCTIONS'),
@@ -308,7 +330,7 @@ export const buildCardHTML = (data) => {
     headerSection(data.procedureName, data.headerImage, 'SCHEDULING INSTRUCTIONS'),
     modalityBanner(data.modality, data.modalityDescription),
     orderOptionsSection(data.orderOptions || [], data.sharedEntityNotes || []),
-    entityMatrixSection(data.entityMatrix || []),
+    entityMatrixSection(data.entityMatrix || [], 'SCH', entityLinks),
     statasap,
     sncovid
   ].join('');
@@ -316,7 +338,7 @@ export const buildCardHTML = (data) => {
   return cardShell(sections);
 };
 
-export const buildCRCardHTML = (data) => {
+export const buildCRCardHTML = (data, entityLinks = null) => {
   if (data.outOfScope) {
     const sections = [
       headerSection(data.procedureName, data.headerImage, 'CLINICAL REVIEW NOTES'),
@@ -332,7 +354,7 @@ export const buildCRCardHTML = (data) => {
     epicOrderablesSection(data.epicOrderables || []),
     tipSheetsSection(data.tipSheets || []),
     standardCRNotesSection(data.standardCRNotes || ''),
-    entityMatrixSection(data.entityMatrix || [])
+    entityMatrixSection(data.entityMatrix || [], 'CR', entityLinks)
   ].join('');
 
   return cardShell(sections);
