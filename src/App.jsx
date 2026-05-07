@@ -184,7 +184,7 @@ const HtmlContent = React.memo(({ html }) => {
 });
 
 // Component for an individual Procedure item
-const ProcedureCard = React.memo(({ group, page, reviewData, onUpdateReview, onSaveProcedureContent, onDeleteProcedure, entityLinks }) => {
+const ProcedureCard = React.memo(({ group, page, reviewData, onUpdateReview, onSaveProcedureContent, onDeleteProcedure, entityLinks, tipSheetsBank }) => {
   const [comment, setComment] = useState('');
   const [savedStatus, setSavedStatus] = useState(false);
   const [editMode, setEditMode] = useState(false);
@@ -388,7 +388,7 @@ const ProcedureCard = React.memo(({ group, page, reviewData, onUpdateReview, onS
               {editorError}
             </div>
           )}
-          <EditorPanel value={editorState} onChange={setEditorState} kind={page} />
+          <EditorPanel value={editorState} onChange={setEditorState} kind={page} tipSheetsBank={tipSheetsBank} />
           <details style={{ marginBottom: '1rem' }}>
             <summary style={{ cursor: 'pointer', color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '0.5rem' }}>Live preview (click to expand)</summary>
             <div className="html-content legacy-content-wrapper" style={{ border: '1px solid rgba(255,255,255,0.1)', borderRadius: '0.5rem', padding: '1rem', background: '#fff' }}>
@@ -444,6 +444,7 @@ export default function App() {
   const [dbProcedures, setDbProcedures] = useState([]);
   const [entityLinks, setEntityLinks] = useState({}); // { THA: {sch, cr}, ... }
   const [oosProcedures, setOosProcedures] = useState({}); // { 'CT BIOPSIES': {name, modalityId}, ... }
+  const [tipSheetsBank, setTipSheetsBank] = useState([]); // [{ id, displayName, category, filename, url }]
   const [isUploading, setIsUploading] = useState(false);
   const [showNewModal, setShowNewModal] = useState(false);
 
@@ -489,11 +490,23 @@ export default function App() {
       console.error("Error reading oosProcedures from Firebase:", error);
     });
 
+    // Subscribe to tipSheets — shared bank of CR tip-sheet titles + URLs that
+    // schedulers pick from when adding a Pertinent Tip Sheet to a CR card.
+    const unsubTips = onSnapshot(collection(db, "tipSheets"), (snapshot) => {
+      const list = [];
+      snapshot.forEach(d => { list.push({ id: d.id, ...d.data() }); });
+      list.sort((a, b) => (a.displayName || '').localeCompare(b.displayName || ''));
+      setTipSheetsBank(list);
+    }, (error) => {
+      console.error("Error reading tipSheets from Firebase:", error);
+    });
+
     return () => {
       unsubReviews();
       unsubProcedures();
       unsubEntityLinks();
       unsubOos();
+      unsubTips();
     };
   }, []);
 
@@ -957,6 +970,7 @@ export default function App() {
               onSaveProcedureContent={saveProcedureContent}
               onDeleteProcedure={deleteProcedure}
               entityLinks={entityLinks}
+              tipSheetsBank={tipSheetsBank}
             />
           );
         })}

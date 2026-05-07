@@ -154,13 +154,26 @@ const EpicOrderablesTable = ({ rows, onChange }) => {
   );
 };
 
-const TipSheetsTable = ({ rows, onChange }) => {
+const TipSheetsTable = ({ rows, onChange, bank = [] }) => {
   const update = (i, field, v) => {
     const next = rows.map((r, idx) => idx === i ? { ...r, [field]: v } : r);
     onChange(next);
   };
   const add = () => onChange([...rows, { title: '', link: '' }]);
   const remove = (i) => onChange(rows.filter((_, idx) => idx !== i));
+  const addFromBank = (id) => {
+    const item = bank.find((b) => b.id === id);
+    if (!item) return;
+    onChange([...rows, { title: item.displayName, link: item.url }]);
+  };
+  // Group bank items by category for an <optgroup>'d <select>
+  const bankByCategory = (() => {
+    const order = ['General','CT','MRI','Fluoro','Breast & Dexa','Ultrasound','Vascular Ultrasound'];
+    const map = {};
+    for (const b of bank) (map[b.category || 'General'] ??= []).push(b);
+    for (const k of Object.keys(map)) map[k].sort((a, b) => a.displayName.localeCompare(b.displayName));
+    return order.filter((k) => map[k]).concat(Object.keys(map).filter((k) => !order.includes(k))).map((k) => [k, map[k]]);
+  })();
   const headerCell = { padding: '0.5rem', textAlign: 'left', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted, #94a3b8)', fontWeight: 700, borderBottom: '1px solid rgba(255,255,255,0.1)' };
   return (
     <div style={sectionWrap}>
@@ -185,8 +198,25 @@ const TipSheetsTable = ({ rows, onChange }) => {
           </tbody>
         </table>
       </div>
-      <div style={{ marginTop: 8 }}>
+      <div style={{ marginTop: 8, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
         <button type="button" style={btnStyle} onClick={add}>+ Add tip sheet</button>
+        {bank && bank.length > 0 && (
+          <select
+            style={{ ...inputStyle, width: 'auto', maxWidth: 380 }}
+            value=""
+            onChange={(e) => { if (e.target.value) { addFromBank(e.target.value); e.target.value = ''; } }}
+            title="Pick a tip sheet from the shared bank — title and link auto-fill"
+          >
+            <option value="">+ Add from bank…</option>
+            {bankByCategory.map(([cat, items]) => (
+              <optgroup key={cat} label={cat}>
+                {items.map((b) => (
+                  <option key={b.id} value={b.id}>{b.displayName}</option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+        )}
       </div>
     </div>
   );
@@ -390,7 +420,7 @@ const SCHEditor = ({ value, onChange }) => {
   );
 };
 
-const CREditor = ({ value, onChange }) => {
+const CREditor = ({ value, onChange, tipSheetsBank }) => {
   const update = (patch) => onChange({ ...value, ...patch });
   const isOOS = !!value.outOfScope;
   return (
@@ -404,7 +434,7 @@ const CREditor = ({ value, onChange }) => {
             <textarea style={{ ...textareaStyle, minHeight: 80 }} placeholder="A brief description of the exam..." value={value.description || ''} onChange={(e) => update({ description: e.target.value })} />
           </div>
           <EpicOrderablesTable rows={value.epicOrderables || []} onChange={(rows) => update({ epicOrderables: rows })} />
-          <TipSheetsTable rows={value.tipSheets || []} onChange={(rows) => update({ tipSheets: rows })} />
+          <TipSheetsTable rows={value.tipSheets || []} onChange={(rows) => update({ tipSheets: rows })} bank={tipSheetsBank || []} />
           <div style={sectionWrap}>
             {fieldLabel('Standard CR Notes')}
             <textarea style={{ ...textareaStyle, minHeight: 100 }} value={value.standardCRNotes || ''} onChange={(e) => update({ standardCRNotes: e.target.value })} />
@@ -423,9 +453,9 @@ const CREditor = ({ value, onChange }) => {
   );
 };
 
-const EditorPanel = ({ value, onChange, kind = 'SCH' }) => {
+const EditorPanel = ({ value, onChange, kind = 'SCH', tipSheetsBank = [] }) => {
   if (kind === 'CR') {
-    return <CREditor value={value} onChange={onChange} />;
+    return <CREditor value={value} onChange={onChange} tipSheetsBank={tipSheetsBank} />;
   }
   return <SCHEditor value={value} onChange={onChange} />;
 };
