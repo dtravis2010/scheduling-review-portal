@@ -243,11 +243,21 @@ const parseOutOfScope = (root) => {
   return { outOfScope: true, outOfScopeReason: '' };
 };
 
+// Strip out any modality-warning banners (added by cardBuilder.modalityWarningBanner)
+// before parsing the rest. The warning is auto-generated from MODALITY_WARNINGS at
+// build time based on data.modality, NOT a stored field — so we don't want it to
+// leak into description / standardCRNotes / anywhere else on round-trip.
+const removeModalityWarnings = (root) => {
+  const banners = root.querySelectorAll('[data-modality-warning="1"]');
+  banners.forEach((b) => b.remove());
+};
+
 // ─────────── Public parsers ───────────
 
 export const parseCard = (htmlString) => {
   const tmp = document.createElement('div');
   tmp.innerHTML = htmlString || '';
+  removeModalityWarnings(tmp);
   const { modality, modalityDescription } = parseModality(tmp);
   const oos = parseOutOfScope(tmp);
   return {
@@ -270,6 +280,7 @@ export const parseCard = (htmlString) => {
 export const parseCRCard = (htmlString) => {
   const tmp = document.createElement('div');
   tmp.innerHTML = htmlString || '';
+  removeModalityWarnings(tmp);
   const { modality, modalityDescription } = parseModality(tmp);
   const oos = parseOutOfScope(tmp);
 
