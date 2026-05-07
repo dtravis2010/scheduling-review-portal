@@ -408,6 +408,13 @@ const CREditor = ({ value, onChange }) => {
           <div style={sectionWrap}>
             {fieldLabel('Standard CR Notes')}
             <textarea style={{ ...textareaStyle, minHeight: 100 }} value={value.standardCRNotes || ''} onChange={(e) => update({ standardCRNotes: e.target.value })} />
+            <div style={{ fontSize: 11, color: '#9aa5b1', marginTop: 6 }}>
+              Tip: blank lines make paragraph breaks. Start a line with{' '}
+              <code style={{ background: '#1f2937', color: '#e2e8f0', padding: '1px 5px', borderRadius: 3 }}>- </code>{' '}
+              or{' '}
+              <code style={{ background: '#1f2937', color: '#e2e8f0', padding: '1px 5px', borderRadius: 3 }}>* </code>{' '}
+              to make a bullet.
+            </div>
           </div>
           <EntityMatrixTable rows={value.entityMatrix || []} onChange={(rows) => update({ entityMatrix: rows })} />
         </>

@@ -277,10 +277,32 @@ export const parseCRCard = (htmlString) => {
   const standardCRNotesHeading = findHeadingByText(tmp, 'Standard CR Notes');
   let standardCRNotes = '';
   if (standardCRNotesHeading) {
-    const next = standardCRNotesHeading.nextElementSibling;
-    // Preserve newlines for the textarea — don't collapse whitespace like stripTags does.
-    // The cardBuilder renders this field with white-space:pre-wrap so \n becomes a line break.
-    standardCRNotes = next ? (next.textContent || '').trim() : '';
+    // Two layout shapes are supported on round-trip:
+    //   OLD (pre-callout): heading is a <div>, content is its sibling <div>.
+    //   NEW (callout):     heading is a <span> inside a headRow <div>; siblings of that
+    //                      row are paragraph <div>s and <ul> blocks. Bullet items become
+    //                      "- text" lines so the textarea can re-edit them as markdown.
+    if (standardCRNotesHeading.tagName === 'SPAN') {
+      const row = standardCRNotesHeading.parentElement;
+      const box = row && row.parentElement;
+      if (box) {
+        const lines = [];
+        for (const child of box.children) {
+          if (child === row) continue;
+          if (child.tagName === 'UL') {
+            for (const li of child.querySelectorAll('li')) {
+              lines.push('- ' + (li.textContent || '').trim());
+            }
+          } else {
+            lines.push(child.textContent || '');
+          }
+        }
+        standardCRNotes = lines.join('\n').trim();
+      }
+    } else {
+      const next = standardCRNotesHeading.nextElementSibling;
+      standardCRNotes = next ? (next.textContent || '').trim() : '';
+    }
   }
 
   return {

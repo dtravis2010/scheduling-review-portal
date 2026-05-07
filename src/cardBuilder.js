@@ -297,8 +297,39 @@ const standardCRNotesSection = (text) => {
   const headRow = styleAttr('display:flex;align-items:center;margin-bottom:12px');
   const badge = styleAttr('display:inline-block;background:#003366;color:#ffffff;font-size:11px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;padding:4px 10px;border-radius:3px;margin-right:10px');
   const head = styleAttr('font-size:13px;font-weight:800;color:#003366;text-transform:uppercase;letter-spacing:1.2px');
-  const body = styleAttr('font-size:14px;color:#1a1a1a;line-height:1.7;white-space:pre-wrap;font-weight:500');
-  return `<div style="${wrap}"><div style="${box}"><div style="${headRow}"><span style="${badge}">CR</span><span style="${head}">Standard CR Notes</span></div><div style="${body}">${esc(text)}</div></div></div>`;
+  const para = styleAttr('font-size:14px;color:#1a1a1a;line-height:1.7;white-space:pre-wrap;font-weight:500;margin:0');
+  const ulStyle = styleAttr('font-size:14px;color:#1a1a1a;line-height:1.7;font-weight:500;margin:0;padding-left:22px');
+  const liStyle = styleAttr('margin:4px 0');
+
+  // Group consecutive lines: a line starting with "- " or "* " becomes a bullet item;
+  // any other line is plain text. Consecutive bullet lines are folded into a single <ul>.
+  // Plain lines are joined with \n inside a div with white-space:pre-wrap so paragraph
+  // breaks render. This lets the textarea round-trip mixed bullets + paragraphs.
+  const lines = text.split(/\r?\n/);
+  const segments = [];
+  let buf = [];
+  let bufKind = null;
+  const flush = () => {
+    if (!buf.length) return;
+    if (bufKind === 'bullet') {
+      const items = buf.map((l) => `<li style="${liStyle}">${esc(l.replace(/^[-*]\s+/, ''))}</li>`).join('');
+      segments.push(`<ul style="${ulStyle}">${items}</ul>`);
+    } else {
+      segments.push(`<div style="${para}">${esc(buf.join('\n'))}</div>`);
+    }
+    buf = [];
+    bufKind = null;
+  };
+  for (const line of lines) {
+    const kind = /^[-*]\s+/.test(line) ? 'bullet' : 'plain';
+    if (bufKind && kind !== bufKind) flush();
+    buf.push(line);
+    bufKind = kind;
+  }
+  flush();
+
+  const body = segments.join('');
+  return `<div style="${wrap}"><div style="${box}"><div style="${headRow}"><span style="${badge}">CR</span><span style="${head}">Standard CR Notes</span></div>${body}</div></div>`;
 };
 
 // Big orange "Out of Scope for all entities" banner. Used when a procedure is flagged
