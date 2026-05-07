@@ -5,6 +5,7 @@ import { parseCard, parseCRCard, DEFAULT_ENTITIES } from './cardParser';
 import { buildCardHTML, buildCRCardHTML } from './cardBuilder';
 import EditorPanel from './EditorPanel';
 import EntityLinksPage from './EntityLinksPage';
+import OutOfScopePage from './OutOfScopePage';
 import {
   STANDARD_STAT_BULLETS,
   STANDARD_ASAP_BULLETS,
@@ -437,11 +438,12 @@ const ProcedureCard = React.memo(({ group, page, reviewData, onUpdateReview, onS
 export default function App() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedModality, setSelectedModality] = useState('All');
-  const [activePage, setActivePage] = useState('SCH'); // 'SCH', 'CR', or 'ENTITY_LINKS'
+  const [activePage, setActivePage] = useState('SCH'); // 'SCH', 'CR', 'ENTITY_LINKS', or 'OOS'
   const [activeTab, setActiveTab] = useState('pending'); // 'pending' or 'finished'
   const [reviewsDB, setReviewsDB] = useState({});
   const [dbProcedures, setDbProcedures] = useState([]);
   const [entityLinks, setEntityLinks] = useState({}); // { THA: {sch, cr}, ... }
+  const [oosProcedures, setOosProcedures] = useState({}); // { 'CT BIOPSIES': {name, modalityId}, ... }
   const [isUploading, setIsUploading] = useState(false);
   const [showNewModal, setShowNewModal] = useState(false);
 
@@ -477,10 +479,21 @@ export default function App() {
       console.error("Error reading entityLinks from Firebase:", error);
     });
 
+    // Subscribe to oosProcedures — keyed by procedure name, fields { name, modalityId }.
+    // Folded into a single OUT_OF_SCOPE_PROCEDURES_SCH SharePoint row on export.
+    const unsubOos = onSnapshot(collection(db, "oosProcedures"), (snapshot) => {
+      const map = {};
+      snapshot.forEach(d => { map[d.id] = d.data(); });
+      setOosProcedures(map);
+    }, (error) => {
+      console.error("Error reading oosProcedures from Firebase:", error);
+    });
+
     return () => {
       unsubReviews();
       unsubProcedures();
       unsubEntityLinks();
+      unsubOos();
     };
   }, []);
 
@@ -868,12 +881,22 @@ export default function App() {
         >
           Entity Links
         </div>
+        <div
+          className={`tab ${activePage === 'OOS' ? 'active' : ''}`}
+          onClick={() => setActivePage('OOS')}
+          style={{ fontWeight: 700, fontSize: '1rem' }}
+        >
+          Out of Scope
+        </div>
       </div>
 
       {activePage === 'ENTITY_LINKS' && (
         <EntityLinksPage entityLinks={entityLinks} />
       )}
-      {activePage !== 'ENTITY_LINKS' && (<>
+      {activePage === 'OOS' && (
+        <OutOfScopePage oosProcedures={oosProcedures} />
+      )}
+      {activePage !== 'ENTITY_LINKS' && activePage !== 'OOS' && (<>
 
       <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem' }}>
         <input
