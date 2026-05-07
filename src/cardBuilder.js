@@ -81,6 +81,36 @@ const modalityBanner = (modality, description) => {
   return `<div style="${wrap}"><div style="${lbl}">Modality</div><div style="${val}">${esc(modality || '')}</div>${descBlock}</div>`;
 };
 
+// Modality-level standard warnings — a prominent orange callout shown directly
+// under the modality banner on every card whose modality matches. Centralized
+// here so wording can be edited in one place and bulk-applied via the inject
+// script. Match patterns are case-insensitive substrings against data.modality
+// (so "MRI" hits MRI/MRA modality strings).
+export const MODALITY_WARNINGS = [
+  {
+    match: ['MRI', 'MRA'],
+    text: 'MRIs/MRAs ARE RARELY DONE JUST WITH CONTRAST. PLEASE OBTAIN A REVISED ORDER FOR WITH AND WITHOUT. IF YOU HAVE QUESTIONS, PLEASE CONSULT A SUPERVISOR.',
+  },
+];
+
+export const MODALITY_WARNING_MARKER = 'data-modality-warning="1"';
+
+export const modalityWarningBanner = (modality) => {
+  if (!modality) return '';
+  const m = String(modality).toUpperCase();
+  const hit = MODALITY_WARNINGS.find((w) => w.match.some((p) => m.includes(p)));
+  if (!hit) return '';
+  const wrap = styleAttr('padding:18px 36px;border-bottom:1px solid #eee');
+  const box = styleAttr('background:#fff4e5;border-left:8px solid #e65100;border-radius:6px;padding:16px 22px');
+  const row = styleAttr('display:table;width:100%');
+  const iconCell = styleAttr('display:table-cell;vertical-align:top;width:42px;padding-right:14px');
+  const icon = styleAttr('background:#e65100;color:#ffffff;font-size:18px;font-weight:800;width:32px;height:32px;border-radius:50%;text-align:center;line-height:32px');
+  const textCell = styleAttr('display:table-cell;vertical-align:middle');
+  const text = styleAttr('font-size:14px;color:#993d00;line-height:1.55;font-weight:700;letter-spacing:0.3px');
+  // The data-attribute marker lets the inject script detect (and re-inject) idempotently.
+  return `<div style="${wrap}" ${MODALITY_WARNING_MARKER}><div style="${box}"><div style="${row}"><div style="${iconCell}"><div style="${icon}">!</div></div><div style="${textCell}"><div style="${text}">${esc(hit.text)}</div></div></div></div></div>`;
+};
+
 // Three-state entity matrix: YES (green), NO (red), OOS (orange).
 // Status rendered as colored bold text (matches the live SharePoint pattern).
 // `kind` is 'SCH' or 'CR' — picks which side of the entity link to use.
@@ -365,6 +395,7 @@ export const buildCardHTML = (data, entityLinks = null) => {
     const sections = [
       headerSection(data.procedureName, data.headerImage, 'SCHEDULING INSTRUCTIONS'),
       modalityBanner(data.modality, data.modalityDescription),
+      modalityWarningBanner(data.modality),
       outOfScopeBanner(data.outOfScopeReason)
     ].join('');
     return cardShell(sections, 'SCH');
@@ -387,6 +418,7 @@ export const buildCardHTML = (data, entityLinks = null) => {
   const sections = [
     headerSection(data.procedureName, data.headerImage, 'SCHEDULING INSTRUCTIONS'),
     modalityBanner(data.modality, data.modalityDescription),
+    modalityWarningBanner(data.modality),
     orderOptionsSection(data.orderOptions || [], data.sharedEntityNotes || []),
     entityMatrixSection(data.entityMatrix || [], 'SCH', entityLinks),
     statasap,
@@ -401,6 +433,7 @@ export const buildCRCardHTML = (data, entityLinks = null) => {
     const sections = [
       headerSection(data.procedureName, data.headerImage, 'CLINICAL REVIEW NOTES'),
       modalityBanner(data.modality, data.modalityDescription),
+      modalityWarningBanner(data.modality),
       outOfScopeBanner(data.outOfScopeReason)
     ].join('');
     return cardShell(sections, 'CR');
@@ -408,6 +441,7 @@ export const buildCRCardHTML = (data, entityLinks = null) => {
   const sections = [
     headerSection(data.procedureName, data.headerImage, 'CLINICAL REVIEW NOTES'),
     modalityBanner(data.modality, data.modalityDescription),
+    modalityWarningBanner(data.modality),
     descriptionBlock(data.description || ''),
     epicOrderablesSection(data.epicOrderables || []),
     tipSheetsSection(data.tipSheets || []),
