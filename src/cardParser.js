@@ -278,7 +278,9 @@ export const parseCRCard = (htmlString) => {
   let standardCRNotes = '';
   if (standardCRNotesHeading) {
     const next = standardCRNotesHeading.nextElementSibling;
-    standardCRNotes = next ? stripTags(innerHTMLOf(next)) : '';
+    // Preserve newlines for the textarea — don't collapse whitespace like stripTags does.
+    // The cardBuilder renders this field with white-space:pre-wrap so \n becomes a line break.
+    standardCRNotes = next ? (next.textContent || '').trim() : '';
   }
 
   return {

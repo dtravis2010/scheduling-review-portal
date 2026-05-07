@@ -294,7 +294,7 @@ const standardCRNotesSection = (text) => {
   if (!text || !text.trim()) return '';
   const wrap = styleAttr('padding:18px 36px;border-bottom:1px solid #eee');
   const head = styleAttr('font-size:13px;font-weight:800;color:#003366;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px');
-  const body = styleAttr('font-size:14px;color:#333;line-height:1.6');
+  const body = styleAttr('font-size:14px;color:#333;line-height:1.6;white-space:pre-wrap');
   return `<div style="${wrap}"><div style="${head}">Standard CR Notes</div><div style="${body}">${esc(text)}</div></div>`;
 };
 
@@ -392,40 +392,40 @@ export const buildCRCardHTML = (data, entityLinks = null) => {
 // Procedure + Modality columns — no per-modality grouping. Default
 // disposition shown to schedulers is "Transfer to entities".
 
-// OOS-only labels. ID 1 is "CT" (not "CT / NM") because NM gets its own
-// bucket (ID 7). ID 8 is IR. These labels appear in the rendered consolidated
-// SharePoint card; the global MODALITY_MAP in App.jsx is unaffected.
 const OOS_MODALITY_LABEL = {
-  1: 'CT',
+  1: 'CT / NM',
   2: 'MRI',
   3: 'GI / Fluoros',
   4: 'Vascular Ultrasound',
   5: 'Non-Vascular Ultrasound',
   6: "Women's Services",
-  7: 'NM',
-  8: 'IR',
 };
 
 export const buildOOSCardHTML = (oosList = []) => {
+  // Single alphabetized list — modality is just a column, not a grouping.
   const sorted = [...oosList].sort((a, b) =>
     (a.name || '').localeCompare(b.name || '')
   );
   const total = sorted.length;
 
+  // ── Header ──
   const headerWrap = styleAttr('padding:24px 36px;background:#003366;color:#ffffff;border-bottom:6px solid #009543');
   const headerKicker = styleAttr('font-size:11px;font-weight:800;color:#a8c4dd;letter-spacing:2px;text-transform:uppercase;margin-bottom:6px');
   const headerTitle = styleAttr("font-size:26px;font-weight:800;color:#ffffff;letter-spacing:0.5px;font-family:'Segoe UI', Arial, Helvetica, sans-serif;margin:0");
   const headerSub = styleAttr('font-size:13px;color:#a8c4dd;margin-top:8px;letter-spacing:1px');
   const header = `<div style="${headerWrap}"><div style="${headerKicker}">Scheduling Instructions</div><div style="${headerTitle}">OUT OF SCOPE PROCEDURES</div><div style="${headerSub}">ALL ENTITIES &middot; ${total} ${total === 1 ? 'PROCEDURE' : 'PROCEDURES'}</div></div>`;
 
+  // ── Orange callout ──
   const calloutWrap = styleAttr('padding:18px 36px;background:#fff4e5;border-left:6px solid #e65100;border-bottom:1px solid #eee');
   const calloutText = styleAttr('font-size:14px;color:#993d00;line-height:1.6;font-weight:600');
   const callout = `<div style="${calloutWrap}"><div style="${calloutText}">These procedures are out of scope for all THR entities. Do not schedule centrally &mdash; transfer the order to the entity scheduler.</div></div>`;
 
+  // ── Description block ──
   const descWrap = styleAttr('padding:16px 36px;background:#f8f9fa;border-bottom:1px solid #eee');
   const descText = styleAttr('font-size:13px;color:#333;line-height:1.6');
   const desc = `<div style="${descWrap}"><div style="${descText}">The following ${total} ${total === 1 ? 'procedure is' : 'procedures are'} not scheduled by central scheduling at any of the 20 THR entities. Use this list as the consolidated reference instead of looking up each procedure individually. Listed alphabetically.</div></div>`;
 
+  // ── Single alphabetized table ──
   const tableWrap = styleAttr('padding:18px 36px;border-bottom:1px solid #eee');
   const tableStyle = styleAttr("width:100%;border-collapse:collapse;border:1px solid #e0e0e0;font-family:'Segoe UI', Arial, Helvetica, sans-serif");
   const thBg = styleAttr('background:#003366;color:#ffffff');
@@ -443,12 +443,15 @@ export const buildOOSCardHTML = (oosList = []) => {
 
   const table = `<div style="${tableWrap}"><table style="${tableStyle}"><tr style="${thBg}"><th style="${thStyle}">Procedure</th><th style="${thStyle};width&#58;28%">Modality</th><th style="${thStyle};width&#58;32%">Disposition</th></tr>${rows}</table></div>`;
 
+  // ── Footer ──
   const footerWrap = styleAttr('padding:18px 36px;background:#f8f9fa;border-top:1px solid #eee;text-align:center;font-size:12px;color:#666');
   const footerLink = styleAttr('color:#003366;text-decoration:none;font-weight:600');
   const footer = `<div style="${footerWrap}">Need to update this list? Contact the VCC Clinical Review team. <a href="mailto&#58;THRESCommunications@texashealth.org" style="${footerLink}">Report an issue</a></div>`;
 
+  // ── Shell ──
   const outerWrap = styleAttr("max-width:980px;margin:0 auto;background:#ffffff;border:1px solid #d0d7de;border-radius:8px;overflow:hidden;font-family:'Segoe UI', Arial, Helvetica, sans-serif");
   const topAccent = styleAttr('height:6px;background:#003366');
 
   return `<div style="${outerWrap}"><div style="${topAccent}"></div>${header}${callout}${desc}${table}${footer}</div>`;
 };
+
