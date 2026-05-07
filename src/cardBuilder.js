@@ -391,11 +391,12 @@ const cardShell = (innerSections, kind = 'SCH') => {
 // from the React App layer; it stays optional so headless callers (scripts)
 // can omit it and get plain-text entity cells (backwards compatible).
 export const buildCardHTML = (data, entityLinks = null) => {
+  // Note: modality warning banners are CR-side only. SCH cards intentionally
+  // skip them — schedulers see the warning when they review the CR card.
   if (data.outOfScope) {
     const sections = [
       headerSection(data.procedureName, data.headerImage, 'SCHEDULING INSTRUCTIONS'),
       modalityBanner(data.modality, data.modalityDescription),
-      modalityWarningBanner(data.modality),
       outOfScopeBanner(data.outOfScopeReason)
     ].join('');
     return cardShell(sections, 'SCH');
@@ -418,7 +419,6 @@ export const buildCardHTML = (data, entityLinks = null) => {
   const sections = [
     headerSection(data.procedureName, data.headerImage, 'SCHEDULING INSTRUCTIONS'),
     modalityBanner(data.modality, data.modalityDescription),
-    modalityWarningBanner(data.modality),
     orderOptionsSection(data.orderOptions || [], data.sharedEntityNotes || []),
     entityMatrixSection(data.entityMatrix || [], 'SCH', entityLinks),
     statasap,
