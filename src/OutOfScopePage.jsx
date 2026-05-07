@@ -13,13 +13,18 @@ import { doc, setDoc, deleteDoc } from 'firebase/firestore';
 import { db } from './firebase';
 import { buildOOSCardHTML } from './cardBuilder';
 
+// OOS-page-only modality labels. ID 1 is relabeled "CT" (no /NM) since NM
+// gets its own bucket here. IDs 7 (NM) and 8 (IR) are new and exist only in
+// the oosProcedures collection — the global App.jsx MODALITY_MAP is unchanged.
 const MODALITY_MAP = {
-  1: 'CT / NM',
+  1: 'CT',
   2: 'MRI',
   3: 'GI & Fluoro',
   4: 'Vascular Ultrasound',
   5: 'General Ultrasound',
   6: "Women's Services",
+  7: 'NM',
+  8: 'IR',
 };
 
 const docKey = (name) => name.trim().replace(/\//g, '-');

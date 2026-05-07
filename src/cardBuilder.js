@@ -392,13 +392,18 @@ export const buildCRCardHTML = (data, entityLinks = null) => {
 // Procedure + Modality columns — no per-modality grouping. Default
 // disposition shown to schedulers is "Transfer to entities".
 
+// OOS-only labels. ID 1 is "CT" (not "CT / NM") because NM gets its own
+// bucket (ID 7). ID 8 is IR. These labels appear in the rendered consolidated
+// SharePoint card; the global MODALITY_MAP in App.jsx is unaffected.
 const OOS_MODALITY_LABEL = {
-  1: 'CT / NM',
+  1: 'CT',
   2: 'MRI',
   3: 'GI / Fluoros',
   4: 'Vascular Ultrasound',
   5: 'Non-Vascular Ultrasound',
   6: "Women's Services",
+  7: 'NM',
+  8: 'IR',
 };
 
 export const buildOOSCardHTML = (oosList = []) => {
