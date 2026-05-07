@@ -292,10 +292,13 @@ const tipSheetsSection = (rows) => {
 
 const standardCRNotesSection = (text) => {
   if (!text || !text.trim()) return '';
-  const wrap = styleAttr('padding:18px 36px;border-bottom:1px solid #eee');
-  const head = styleAttr('font-size:13px;font-weight:800;color:#003366;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px');
-  const body = styleAttr('font-size:14px;color:#333;line-height:1.6;white-space:pre-wrap');
-  return `<div style="${wrap}"><div style="${head}">Standard CR Notes</div><div style="${body}">${esc(text)}</div></div>`;
+  const wrap = styleAttr('padding:20px 36px;border-bottom:1px solid #eee');
+  const box = styleAttr('background:#e8f1f9;border-left:8px solid #003366;border-radius:6px;padding:20px 24px;box-shadow:0 1px 2px rgba(0,0,0,0.04)');
+  const headRow = styleAttr('display:flex;align-items:center;margin-bottom:12px');
+  const badge = styleAttr('display:inline-block;background:#003366;color:#ffffff;font-size:11px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;padding:4px 10px;border-radius:3px;margin-right:10px');
+  const head = styleAttr('font-size:13px;font-weight:800;color:#003366;text-transform:uppercase;letter-spacing:1.2px');
+  const body = styleAttr('font-size:14px;color:#1a1a1a;line-height:1.7;white-space:pre-wrap;font-weight:500');
+  return `<div style="${wrap}"><div style="${box}"><div style="${headRow}"><span style="${badge}">CR</span><span style="${head}">Standard CR Notes</span></div><div style="${body}">${esc(text)}</div></div></div>`;
 };
 
 // Big orange "Out of Scope for all entities" banner. Used when a procedure is flagged
