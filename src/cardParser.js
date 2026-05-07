@@ -202,21 +202,41 @@ const parseModality = (root) => {
   return { modality, modalityDescription };
 };
 
+// Headings that identify a NON-description section. If a div we're inspecting
+// contains one of these as the exact text of any descendant span/div/p,
+// we know it's a different callout/table section and skip it. Prevents the
+// description scan from grabbing the Standard CR Notes callout body, etc.
+const NON_DESCRIPTION_HEADINGS = new Set([
+  'Standard CR Notes',
+  'Epic Orderables / Exam Variants',
+  'Pertinent Tip Sheets',
+  'Entity Matrix',
+  'Order Options',
+  'Shared Entity Notes',
+  'STAT Orders',
+  'ASAP / Same Day / Next Day (Non-STAT)',
+  'Special Needs',
+  'COVID STATUS',
+]);
+
 // Parse the description paragraph that lives in CR cards between the modality banner
 // and the Epic Orderables table. It's just the first non-table div in that region.
 const parseDescription = (root) => {
-  // Find all section divs (the ones that have "padding:18px 36px" pattern)
   const sectionDivs = root.querySelectorAll('div');
   for (const d of sectionDivs) {
     const style = d.getAttribute('style') || '';
     if (!style.includes('padding') || !style.includes('36px')) continue;
-    // Skip sections that contain headings like "Standard CR Notes", tables, etc.
     if (d.querySelector('table')) continue;
     if (d.querySelector('div')) {
       const inner = d.querySelector('div');
       const innerStyle = inner.getAttribute('style') || '';
       if (innerStyle.includes('text-transform') && innerStyle.includes('uppercase')) continue;
     }
+    // Skip sections that contain a known section heading (Standard CR Notes, etc).
+    const headingHit = [...d.querySelectorAll('div, span, p')].some((el) =>
+      NON_DESCRIPTION_HEADINGS.has((el.textContent || '').trim())
+    );
+    if (headingHit) continue;
     const text = stripTags(innerHTMLOf(d));
     if (text.length > 20 && text.length < 1000) return text;
   }

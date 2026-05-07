@@ -99,9 +99,14 @@ export default function OutOfScopePage({ oosProcedures }) {
     }
   };
 
-  // Generate the consolidated SharePoint row JSON: one item, ModalityId 1,
-  // Procedure OUT_OF_SCOPE_PROCEDURES_SCH, full HTML card built from current
-  // oosProcedures contents.
+  // Generate the consolidated SharePoint row JSON. Emits TWO items so both
+  // the Scheduling and Clinical Review tabs of the SharePoint reference site
+  // show the OOS landing page:
+  //   - OUT_OF_SCOPE_PROCEDURES_SCH  (visible on the Scheduling tab)
+  //   - OUT_OF_SCOPE_PROCEDURES_CR   (visible on the Clinical Review tab)
+  // Both rows carry the SAME consolidated HTML in Scheduling_x0020_Instructions
+  // (per the project convention — the _CR / _SCH suffix on Procedure is the
+  // discriminator, and Clinical_x0020_Review_x0020_Notes is always empty).
   const exportConsolidatedJSON = () => {
     const list = Object.values(oosProcedures || {})
       .map((p) => ({ name: p.name, modalityId: p.modalityId || 1 }));
@@ -110,16 +115,19 @@ export default function OutOfScopePage({ oosProcedures }) {
       return;
     }
     const html = buildOOSCardHTML(list);
-    const item = {
+    const baseItem = {
       Entity0Id: 24,
       ModalityId: 1,
-      Procedure: 'OUT_OF_SCOPE_PROCEDURES_SCH',
       Scheduling_x0020_Instructions: html,
       Clinical_x0020_Review_x0020_Notes: '',
     };
+    const items = [
+      { ...baseItem, Procedure: 'OUT_OF_SCOPE_PROCEDURES_SCH' },
+      { ...baseItem, Procedure: 'OUT_OF_SCOPE_PROCEDURES_CR' },
+    ];
     const stamp = new Date().toISOString().slice(0, 10);
     const fileName = `Update_OOS_Consolidated_${stamp}.json`;
-    const blob = new Blob([JSON.stringify([item], null, 2)], { type: 'application/json' });
+    const blob = new Blob([JSON.stringify(items, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
