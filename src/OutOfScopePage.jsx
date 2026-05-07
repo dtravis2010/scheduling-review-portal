@@ -29,6 +29,7 @@ export default function OutOfScopePage({ oosProcedures }) {
   const [newModality, setNewModality] = useState(1);
   const [addError, setAddError] = useState('');
   const [adding, setAdding] = useState(false);
+  const [savedKey, setSavedKey] = useState(null); // doc key that just saved — flashes "Saved ✓"
 
   // Single alphabetized list — modality is just metadata shown as a column.
   const sorted = useMemo(() => {
@@ -64,6 +65,23 @@ export default function OutOfScopePage({ oosProcedures }) {
       setAddError(e.message || 'Add failed');
     }
     setAdding(false);
+  };
+
+  // Inline-edit a procedure's modality. Writes to Firestore on change; the
+  // onSnapshot subscription in App.jsx will refresh the parent prop.
+  const updateModality = async (key, newModalityId) => {
+    try {
+      await setDoc(
+        doc(db, 'oosProcedures', key),
+        { modalityId: Number(newModalityId) || 1 },
+        { merge: true }
+      );
+      setSavedKey(key);
+      setTimeout(() => setSavedKey((k) => (k === key ? null : k)), 1500);
+    } catch (e) {
+      console.error('Update OOS modality failed:', e);
+      alert(`Could not update modality: ${e.message || 'unknown error'}`);
+    }
   };
 
   const removeProcedure = async (key, name) => {
@@ -210,7 +228,21 @@ export default function OutOfScopePage({ oosProcedures }) {
             return (
               <tr key={key}>
                 <td style={{ ...tdStyle, fontWeight: 600 }}>{p.name}</td>
-                <td style={tdStyle}>{MODALITY_MAP[p.modalityId] || `Modality ${p.modalityId}`}</td>
+                <td style={tdStyle}>
+                  <select
+                    value={p.modalityId || 1}
+                    onChange={(e) => updateModality(key, e.target.value)}
+                    style={{ ...selectStyle, minWidth: '160px' }}
+                    title="Change modality (saves on change)"
+                  >
+                    {Object.entries(MODALITY_MAP).map(([id, label]) => (
+                      <option key={id} value={id}>{label}</option>
+                    ))}
+                  </select>
+                  {savedKey === key && (
+                    <span style={{ marginLeft: '8px', color: '#86efac', fontSize: '12px' }}>Saved ✓</span>
+                  )}
+                </td>
                 <td style={{ ...tdStyle, textAlign: 'right' }}>
                   <button
                     onClick={() => removeProcedure(key, p.name)}
