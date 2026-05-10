@@ -2,13 +2,18 @@
 // Structured editor for SCH and CR cards. Pass `kind="SCH"` or `kind="CR"`.
 // Receives a `value` (parsed structure) and an `onChange(updated)` callback.
 
-import React, { useState } from 'react';
+import React, { useState, useMemo, useId } from 'react';
 import {
   STANDARD_STAT_BULLETS,
   STANDARD_ASAP_BULLETS,
   STANDARD_SPECIAL_NEEDS_BULLETS,
   STANDARD_COVID_BULLETS
 } from './standardCallouts';
+import {
+  ORDERABLES_BANK,
+  ORDERABLES_BY_NAME,
+  modalityFieldToBucket
+} from './orderablesBank';
 
 const fieldLabel = (text) => (
   <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--accent-blue, #60a5fa)', fontWeight: 700, marginBottom: 6 }}>{text}</div>
@@ -114,11 +119,41 @@ const OrderOptionsTable = ({ rows, onChange }) => {
   );
 };
 
-const EpicOrderablesTable = ({ rows, onChange }) => {
-  const update = (i, field, v) => {
-    const next = rows.map((r, idx) => idx === i ? { ...r, [field]: v } : r);
+const EpicOrderablesTable = ({ rows, onChange, modality }) => {
+  const datalistId = useId();
+  const [scopeAll, setScopeAll] = useState(false);
+
+  const bucket = modalityFieldToBucket(modality);
+  const filteredBank = useMemo(() => {
+    if (scopeAll || !bucket) return ORDERABLES_BANK;
+    const scoped = ORDERABLES_BANK.filter((o) => o.modalityBucket === bucket);
+    // If the modality filter would hide everything, fall back to the full
+    // bank so the user can still pick from outside the bucket.
+    return scoped.length ? scoped : ORDERABLES_BANK;
+  }, [bucket, scopeAll]);
+
+  const updateRow = (i, patch) => {
+    const next = rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r));
     onChange(next);
   };
+  const update = (i, field, v) => updateRow(i, { [field]: v });
+
+  // Called when the orderable-name input changes. If the value matches a
+  // bank entry (case-insensitive, full name), auto-fill contrast + Epic ID.
+  // Otherwise just write the free-text value through.
+  const onNameChange = (i, value) => {
+    const hit = ORDERABLES_BY_NAME.get(value.trim().toUpperCase());
+    if (hit) {
+      updateRow(i, {
+        orderableName: hit.fullName,
+        contrast: hit.contrast || rows[i]?.contrast || '',
+        epicId: hit.epicId,
+      });
+    } else {
+      update(i, 'orderableName', value);
+    }
+  };
+
   const add = () => onChange([...rows, { orderableName: '', contrast: '', epicId: '' }]);
   const remove = (i) => onChange(rows.filter((_, idx) => idx !== i));
   const headerCell = { padding: '0.5rem', textAlign: 'left', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted, #94a3b8)', fontWeight: 700, borderBottom: '1px solid rgba(255,255,255,0.1)' };
@@ -138,7 +173,15 @@ const EpicOrderablesTable = ({ rows, onChange }) => {
           <tbody>
             {(rows || []).map((r, i) => (
               <tr key={i}>
-                <td style={{ padding: 4 }}><input style={inputStyle} value={r.orderableName} onChange={(e) => update(i, 'orderableName', e.target.value)} /></td>
+                <td style={{ padding: 4 }}>
+                  <input
+                    style={inputStyle}
+                    list={datalistId}
+                    placeholder="Type to search Epic LPF…"
+                    value={r.orderableName}
+                    onChange={(e) => onNameChange(i, e.target.value)}
+                  />
+                </td>
                 <td style={{ padding: 4 }}><input style={inputStyle} value={r.contrast} onChange={(e) => update(i, 'contrast', e.target.value)} /></td>
                 <td style={{ padding: 4 }}><input style={inputStyle} value={r.epicId} onChange={(e) => update(i, 'epicId', e.target.value)} /></td>
                 <td style={{ padding: 4, verticalAlign: 'top' }}><button type="button" style={dangerBtnStyle} onClick={() => remove(i)} title="Delete row">&#10005;</button></td>
@@ -147,8 +190,31 @@ const EpicOrderablesTable = ({ rows, onChange }) => {
           </tbody>
         </table>
       </div>
-      <div style={{ marginTop: 8 }}>
+      <datalist id={datalistId}>
+        {filteredBank.map((o) => (
+          <option key={o.epicId} value={o.fullName}>
+            {`${o.fullName} — ${o.epicId}`}
+          </option>
+        ))}
+      </datalist>
+      <div style={{ marginTop: 8, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
         <button type="button" style={btnStyle} onClick={add}>+ Add orderable</button>
+        <span style={{ fontSize: '0.72rem', color: 'var(--text-muted, #94a3b8)' }}>
+          {bucket
+            ? `Bank: ${filteredBank.length} ${scopeAll ? 'orderables (all modalities)' : `${bucket} orderables`}`
+            : `Bank: ${filteredBank.length} orderables`}
+          {' — type in Orderable Name to search; Contrast + Epic ID auto-fill on pick.'}
+        </span>
+        {bucket && (
+          <label style={{ fontSize: '0.72rem', color: 'var(--text-muted, #94a3b8)', display: 'inline-flex', gap: 6, alignItems: 'center', cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={scopeAll}
+              onChange={(e) => setScopeAll(e.target.checked)}
+            />
+            Show all modalities
+          </label>
+        )}
       </div>
     </div>
   );
@@ -433,7 +499,7 @@ const CREditor = ({ value, onChange, tipSheetsBank }) => {
             {fieldLabel('Description / Overview')}
             <textarea style={{ ...textareaStyle, minHeight: 80 }} placeholder="A brief description of the exam..." value={value.description || ''} onChange={(e) => update({ description: e.target.value })} />
           </div>
-          <EpicOrderablesTable rows={value.epicOrderables || []} onChange={(rows) => update({ epicOrderables: rows })} />
+          <EpicOrderablesTable rows={value.epicOrderables || []} onChange={(rows) => update({ epicOrderables: rows })} modality={value.modality} />
           <TipSheetsTable rows={value.tipSheets || []} onChange={(rows) => update({ tipSheets: rows })} bank={tipSheetsBank || []} />
           <div style={sectionWrap}>
             {fieldLabel('Standard CR Notes')}
