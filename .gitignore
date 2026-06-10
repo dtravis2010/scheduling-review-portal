@@ -22,3 +22,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Local scratch from maintenance scripts (snapshots / previews / one-off probes)
+_*.mjs
+*_snapshot.json
+*_preview.html
+oos_inventory.json

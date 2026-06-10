@@ -9,23 +9,14 @@
 // modality. Replaces the old pattern of one OOS-flagged card per procedure.
 
 import React, { useMemo, useState } from 'react';
-import { doc, setDoc, deleteDoc } from 'firebase/firestore';
-import { db } from './firebase';
+import { auditedSet, auditedDelete } from './audit';
+import { OOS_MODALITY_NAME } from './modalities';
 import { buildOOSCardHTML } from './cardBuilder';
 
 // OOS-page-only modality labels. ID 1 is relabeled "CT" (no /NM) since NM
-// gets its own bucket here. IDs 7 (NM) and 8 (IR) are new and exist only in
-// the oosProcedures collection — the global App.jsx MODALITY_MAP is unchanged.
-const MODALITY_MAP = {
-  1: 'CT',
-  2: 'MRI',
-  3: 'GI & Fluoro',
-  4: 'Vascular Ultrasound',
-  5: 'General Ultrasound',
-  6: "Women's Services",
-  7: 'NM',
-  8: 'IR',
-};
+// gets its own bucket here. Shared via modalities.js so the History page
+// shows the same labels this page writes.
+const MODALITY_MAP = OOS_MODALITY_NAME;
 
 const docKey = (name) => name.trim().replace(/\//g, '-');
 
@@ -60,10 +51,10 @@ export default function OutOfScopePage({ oosProcedures }) {
     }
     setAdding(true);
     try {
-      await setDoc(doc(db, 'oosProcedures', key), {
+      await auditedSet('oosProcedures', key, {
         name,
         modalityId: Number(newModality) || 1,
-      });
+      }, { label: name });
       setNewName('');
     } catch (e) {
       console.error('Add OOS procedure failed:', e);
@@ -74,12 +65,13 @@ export default function OutOfScopePage({ oosProcedures }) {
 
   // Inline-edit a procedure's modality. Writes to Firestore on change; the
   // onSnapshot subscription in App.jsx will refresh the parent prop.
-  const updateModality = async (key, newModalityId) => {
+  const updateModality = async (key, newModalityId, name) => {
     try {
-      await setDoc(
-        doc(db, 'oosProcedures', key),
+      await auditedSet(
+        'oosProcedures',
+        key,
         { modalityId: Number(newModalityId) || 1 },
-        { merge: true }
+        { label: name || key }
       );
       setSavedKey(key);
       setTimeout(() => setSavedKey((k) => (k === key ? null : k)), 1500);
@@ -92,7 +84,7 @@ export default function OutOfScopePage({ oosProcedures }) {
   const removeProcedure = async (key, name) => {
     if (!confirm(`Remove ${name} from the OOS list?\n\nThis only edits the consolidated list. Run “Export Power Automate JSON” on this tab and upload the result to push the change to SharePoint.`)) return;
     try {
-      await deleteDoc(doc(db, 'oosProcedures', key));
+      await auditedDelete('oosProcedures', key, { label: name });
     } catch (e) {
       console.error('Delete OOS procedure failed:', e);
       alert(`Could not delete ${name}: ${e.message || 'unknown error'}`);
@@ -244,7 +236,7 @@ export default function OutOfScopePage({ oosProcedures }) {
                 <td style={tdStyle}>
                   <select
                     value={p.modalityId || 1}
-                    onChange={(e) => updateModality(key, e.target.value)}
+                    onChange={(e) => updateModality(key, e.target.value, p.name)}
                     style={{ ...selectStyle, minWidth: '160px' }}
                     title="Change modality (saves on change)"
                   >

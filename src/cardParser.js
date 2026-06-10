@@ -3,6 +3,8 @@
 // SCH cards are parsed by parseCard(); CR cards by parseCRCard(). Both fall back gracefully
 // on missing sections so legacy or partial HTML still produces a usable structure.
 
+import { OOS_PRESERVED_MARKER } from './cardBuilder';
+
 export const DEFAULT_ENTITIES = [
   'THA', 'THAL', 'THAMH', 'THAZ', 'THB', 'THC', 'THD', 'THDN', 'THF', 'THFM',
   'THFW', 'THHEB', 'THK', 'THP', 'THPPIC', 'THPS', 'THRW', 'THS', 'THSW', 'THWP'
@@ -272,6 +274,21 @@ const removeModalityWarnings = (root) => {
   banners.forEach((b) => b.remove());
 };
 
+// Read the hidden data island that OOS cards carry (see cardBuilder.oosPreservedData).
+// Returns the full structured fields so an OOS card round-trips its content and can be
+// restored if Out of Scope is later unchecked. Returns null when absent or unparseable
+// (e.g. legacy OOS cards saved before this was added — those simply can't be recovered).
+const readPreservedData = (root) => {
+  const el = root.querySelector(`[${OOS_PRESERVED_MARKER}]`);
+  if (!el) return null;
+  try {
+    const parsed = JSON.parse(el.textContent || '');
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+};
+
 // ─────────── Public parsers ───────────
 
 export const parseCard = (htmlString) => {
@@ -280,6 +297,16 @@ export const parseCard = (htmlString) => {
   removeModalityWarnings(tmp);
   const { modality, modalityDescription } = parseModality(tmp);
   const oos = parseOutOfScope(tmp);
+
+  // OOS cards carry a hidden payload of their full structure — restore it so the
+  // editor shows the real tables and a later un-OOS save rebuilds the full card.
+  if (oos.outOfScope) {
+    const preserved = readPreservedData(tmp);
+    if (preserved) {
+      return { ...preserved, outOfScope: true, outOfScopeReason: oos.outOfScopeReason };
+    }
+  }
+
   return {
     outOfScope: oos.outOfScope,
     outOfScopeReason: oos.outOfScopeReason,
@@ -303,6 +330,15 @@ export const parseCRCard = (htmlString) => {
   removeModalityWarnings(tmp);
   const { modality, modalityDescription } = parseModality(tmp);
   const oos = parseOutOfScope(tmp);
+
+  // OOS cards carry a hidden payload of their full structure — restore it so the
+  // editor shows the real tables and a later un-OOS save rebuilds the full card.
+  if (oos.outOfScope) {
+    const preserved = readPreservedData(tmp);
+    if (preserved) {
+      return { ...preserved, outOfScope: true, outOfScopeReason: oos.outOfScopeReason };
+    }
+  }
 
   // Standard CR Notes lives in a section with that heading
   const standardCRNotesHeading = findHeadingByText(tmp, 'Standard CR Notes');

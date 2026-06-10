@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { db } from './firebase';
-import { collection, onSnapshot, doc, setDoc, writeBatch, deleteDoc } from 'firebase/firestore';
+import { collection, onSnapshot, doc, writeBatch } from 'firebase/firestore';
 import { parseCard, parseCRCard, DEFAULT_ENTITIES } from './cardParser';
-import { buildCardHTML, buildCRCardHTML } from './cardBuilder';
+import { buildCardHTML, buildCRCardHTML, stripOOSPreserved } from './cardBuilder';
 import EditorPanel from './EditorPanel';
 import EntityLinksPage from './EntityLinksPage';
 import OutOfScopePage from './OutOfScopePage';
+import HistoryPage from './HistoryPage';
+import { auditedSet, auditedDelete, logEvent, logBulk } from './audit';
 import {
   STANDARD_STAT_BULLETS,
   STANDARD_ASAP_BULLETS,
@@ -184,7 +186,7 @@ const HtmlContent = React.memo(({ html }) => {
 });
 
 // Component for an individual Procedure item
-const ProcedureCard = React.memo(({ group, page, reviewData, onUpdateReview, onSaveProcedureContent, onDeleteProcedure, entityLinks, tipSheetsBank }) => {
+const ProcedureCard = React.memo(({ group, page, reviewData, onUpdateReview, onSaveProcedureContent, onDeleteProcedure, onViewHistory, entityLinks, tipSheetsBank }) => {
   const [comment, setComment] = useState('');
   const [savedStatus, setSavedStatus] = useState(false);
   const [editMode, setEditMode] = useState(false);
@@ -199,20 +201,26 @@ const ProcedureCard = React.memo(({ group, page, reviewData, onUpdateReview, onS
 
   // Sync the local text box with the Firebase database
   useEffect(() => {
-    if (reviewData?.comment !== undefined && reviewData?.comment !== comment) {
-      setComment(reviewData.comment);
+    // `?? ''` guards the controlled textarea against a null comment (e.g. a
+    // History restore of a record captured before the field existed).
+    if (reviewData?.comment !== undefined && (reviewData?.comment ?? '') !== comment) {
+      setComment(reviewData.comment ?? '');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reviewData?.comment]);
 
+  // Audit label keeps the raw (slash-containing) name so the per-card History
+  // filter matches both review and content records for the same procedure.
+  const auditLabel = `${group.baseName}_${page}`;
+
   const handleSave = () => {
-    onUpdateReview(dbKey, { comment, isFinished });
+    onUpdateReview(dbKey, { comment, isFinished }, auditLabel);
     setSavedStatus(true);
     setTimeout(() => setSavedStatus(false), 2000);
   };
 
   const handleToggleFinished = () => {
-    onUpdateReview(dbKey, { comment, isFinished: !isFinished });
+    onUpdateReview(dbKey, { comment, isFinished: !isFinished }, auditLabel);
   };
 
   // Pick the right HTML field based on which page we're on
@@ -284,9 +292,11 @@ const ProcedureCard = React.memo(({ group, page, reviewData, onUpdateReview, onS
         // OOS-to-sibling propagation above, we never auto-unfinish —
         // unchecking OOS leaves isFinished alone.
         const baseId = group.baseName.replace(/\//g, '-');
-        await onUpdateReview(`${baseId}_SCH`, { isFinished: true });
-        await onUpdateReview(`${baseId}_CR`,  { isFinished: true });
-        setIsFinished(true);
+        await onUpdateReview(`${baseId}_SCH`, { isFinished: true }, `${group.baseName}_SCH`);
+        await onUpdateReview(`${baseId}_CR`,  { isFinished: true }, `${group.baseName}_CR`);
+        // isFinished is derived from reviewData (see top of component); the
+        // onUpdateReview writes above propagate back via onSnapshot, so the
+        // finished state updates on its own — no local setter needed.
       }
 
       setEditorSaved(true);
@@ -369,6 +379,26 @@ const ProcedureCard = React.memo(({ group, page, reviewData, onUpdateReview, onS
               🗑 Delete
             </button>
           )}
+          {!editMode && onViewHistory && (
+            <button
+              type="button"
+              className="btn"
+              onClick={() => onViewHistory(group.baseName)}
+              title="View this procedure's change history"
+              style={{
+                padding: '0.25rem 0.75rem',
+                background: 'rgba(168,85,247,0.12)',
+                border: '1px solid rgba(168,85,247,0.35)',
+                color: '#d8b4fe',
+                fontSize: '0.8rem',
+                fontWeight: 600,
+                borderRadius: '999px',
+                cursor: 'pointer'
+              }}
+            >
+              🕓 History
+            </button>
+          )}
           <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', marginLeft: 'auto', background: isFinished ? 'rgba(52, 211, 153, 0.2)' : 'rgba(255, 255, 255, 0.1)', padding: '0.25rem 0.75rem', borderRadius: '999px', fontSize: '0.875rem' }}>
             <input
               type="checkbox"
@@ -438,7 +468,8 @@ const ProcedureCard = React.memo(({ group, page, reviewData, onUpdateReview, onS
 export default function App() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedModality, setSelectedModality] = useState('All');
-  const [activePage, setActivePage] = useState('SCH'); // 'SCH', 'CR', 'ENTITY_LINKS', or 'OOS'
+  const [activePage, setActivePage] = useState('SCH'); // 'SCH', 'CR', 'ENTITY_LINKS', 'OOS', or 'HISTORY'
+  const [historyFilter, setHistoryFilter] = useState(''); // pre-seeds the History search when jumping from a card
   const [activeTab, setActiveTab] = useState('pending'); // 'pending' or 'finished'
   const [reviewsDB, setReviewsDB] = useState({});
   const [dbProcedures, setDbProcedures] = useState([]);
@@ -524,30 +555,54 @@ export default function App() {
         return;
       }
 
+      // Snapshot the reviewer comments this upload is about to wipe — the
+      // procedure HTML can be re-uploaded from the JSON file, but the comments
+      // exist nowhere else, so the bulk audit record preserves them.
+      const clearedComments = [];
+      for (const item of jsonData) {
+        if (!item?.Procedure) continue;
+        const cleanId = item.Procedure.replace(/\//g, '-');
+        const prev = reviewsDB[cleanId];
+        if (prev?.comment) clearedComments.push({ procedure: item.Procedure, comment: prev.comment });
+      }
+
       // Chunk uploads to avoid 500 op limit on Firestore batched writes
       const chunkSize = 200; // Lower chunk size to account for review clears (2 ops per item)
       let count = 0;
-      for (let i = 0; i < jsonData.length; i += chunkSize) {
-        const chunk = jsonData.slice(i, i + chunkSize);
-        const batch = writeBatch(db);
+      try {
+        for (let i = 0; i < jsonData.length; i += chunkSize) {
+          const chunk = jsonData.slice(i, i + chunkSize);
+          const batch = writeBatch(db);
+          let chunkCount = 0;
 
-        chunk.forEach(item => {
-          if (item.Procedure) {
-            // Replace any slashes to prevent subcollections
-            const cleanId = item.Procedure.replace(/\//g, '-');
-            const docRef = doc(db, 'procedures', cleanId);
-            batch.set(docRef, item, { merge: true });
+          chunk.forEach(item => {
+            if (item.Procedure) {
+              // Replace any slashes to prevent subcollections
+              const cleanId = item.Procedure.replace(/\//g, '-');
+              const docRef = doc(db, 'procedures', cleanId);
+              batch.set(docRef, item, { merge: true });
 
-            // Clear the reviewer comment/notes for this procedure
-            const reviewKey = cleanId.replace(/\//g, '-');
-            const reviewRef = doc(db, 'reviews', reviewKey);
-            batch.set(reviewRef, { comment: '', isFinished: false }, { merge: true });
+              // Clear the reviewer comment/notes for this procedure
+              const reviewRef = doc(db, 'reviews', cleanId);
+              batch.set(reviewRef, { comment: '', isFinished: false }, { merge: true });
 
-            count++;
-          }
-        });
+              chunkCount++;
+            }
+          });
 
-        await batch.commit();
+          await batch.commit();
+          count += chunkCount;
+        }
+      } finally {
+        // Earlier chunks commit even if a later one throws — record whatever
+        // actually landed so a partial upload doesn't vanish from History.
+        if (count > 0) {
+          await logBulk('procedures', `Batch JSON upload (${count} procedures)`, {
+            proceduresUploaded: count,
+            reviewsCleared: count,
+            clearedComments,
+          });
+        }
       }
       alert(`Successfully uploaded ${count} procedures! Reviewer notes have been cleared for uploaded items.`);
     } catch (e) {
@@ -559,9 +614,16 @@ export default function App() {
     event.target.value = null; // reset input
   };
 
-  const updateReviewInDB = async (procedureKey, updateData) => {
+  const updateReviewInDB = async (procedureKey, updateData, label) => {
     try {
-      await setDoc(doc(db, "reviews", procedureKey), updateData, { merge: true });
+      // reviewsDB mirrors the reviews collection live via onSnapshot, so pass
+      // it as the audit `before` — skipping auditedSet's pre-read keeps this
+      // hot path (checkbox toggles, comment saves) at one write round-trip and
+      // lets Firestore's latency compensation flip the UI instantly.
+      await auditedSet('reviews', procedureKey, updateData, {
+        label: label || procedureKey,
+        before: reviewsDB[procedureKey] ?? null,
+      });
     } catch (error) {
       console.error("Error updating database:", error);
       alert("Error saving to database! Check your Firebase rules.");
@@ -572,9 +634,7 @@ export default function App() {
   // Clinical_x0020_Review_x0020_Notes) back to the procedures collection.
   const saveProcedureContent = useCallback(async (procedureName, fieldName, newHTML) => {
     const cleanId = procedureName.replace(/\//g, '-');
-    const patch = {};
-    patch[fieldName] = newHTML;
-    await setDoc(doc(db, 'procedures', cleanId), patch, { merge: true });
+    await auditedSet('procedures', cleanId, { [fieldName]: newHTML }, { label: procedureName });
   }, []);
 
   // Build default v12 SCH/CR HTML for a brand-new procedure and write to Firestore.
@@ -652,7 +712,22 @@ export default function App() {
       batch.set(doc(db, 'reviews', w.id), { comment: '', isFinished: false }, { merge: true });
     }
     await batch.commit();
-  }, [entityLinks]);
+    // The merge:true set above can land on an existing doc (e.g. a name that
+    // sanitizes to the same id, or a stale duplicate check) — log that as the
+    // update it really is, with the in-memory doc as `before`, instead of
+    // asserting a brand-new create. Logs run in parallel; logEvent never throws.
+    await Promise.all(writes.map((w) => {
+      const existing = dbProcedures.find(p => p.Procedure?.replace(/\//g, '-') === w.id);
+      const before = existing
+        ? Object.fromEntries(Object.keys(w.data).filter(k => k in existing).map(k => [k, existing[k]]))
+        : null;
+      return logEvent({
+        coll: 'procedures', docId: w.id, label: w.proc,
+        action: existing ? 'update' : 'create',
+        before, after: w.data,
+      });
+    }));
+  }, [entityLinks, dbProcedures]);
 
   // Delete a procedure (and optionally its sibling on the other page) from
   // both procedures and reviews collections.
@@ -661,17 +736,24 @@ export default function App() {
     for (const proc of targets) {
       const cleanId = proc.replace(/\//g, '-');
       try {
-        await deleteDoc(doc(db, 'procedures', cleanId));
+        await auditedDelete('procedures', cleanId, { label: proc });
       } catch (e) {
         console.warn(`procedures/${cleanId} delete:`, e.message);
       }
       try {
-        await deleteDoc(doc(db, 'reviews', cleanId));
+        await auditedDelete('reviews', cleanId, { label: proc });
       } catch (e) {
         console.warn(`reviews/${cleanId} delete:`, e.message);
       }
     }
   }, [activePage]);
+
+  // Jump to the History tab pre-filtered to one procedure (used by the per-card
+  // 🕓 History shortcut).
+  const viewHistoryFor = useCallback((label) => {
+    setHistoryFilter(label);
+    setActivePage('HISTORY');
+  }, []);
 
   const { groupedData, availableModalities } = useMemo(() => {
     const groups = {};
@@ -713,7 +795,9 @@ export default function App() {
       const fieldHTML = activePage === 'SCH'
         ? item.Scheduling_x0020_Instructions
         : item.Clinical_x0020_Review_x0020_Notes;
-      const inContent = fieldHTML?.toLowerCase().includes(term);
+      // Strip the hidden OOS data island first — otherwise OOS cards match
+      // searches for text that is nowhere visible on the card.
+      const inContent = fieldHTML ? stripOOSPreserved(fieldHTML).toLowerCase().includes(term) : false;
       const matchesSearch = inBaseName || inContent;
 
       const matchesModality = selectedModality === 'All' || group.ModalityId?.toString() === selectedModality;
@@ -901,6 +985,13 @@ export default function App() {
         >
           Out of Scope
         </div>
+        <div
+          className={`tab ${activePage === 'HISTORY' ? 'active' : ''}`}
+          onClick={() => { setHistoryFilter(''); setActivePage('HISTORY'); }}
+          style={{ fontWeight: 700, fontSize: '1rem' }}
+        >
+          History
+        </div>
       </div>
 
       {activePage === 'ENTITY_LINKS' && (
@@ -909,7 +1000,10 @@ export default function App() {
       {activePage === 'OOS' && (
         <OutOfScopePage oosProcedures={oosProcedures} />
       )}
-      {activePage !== 'ENTITY_LINKS' && activePage !== 'OOS' && (<>
+      {activePage === 'HISTORY' && (
+        <HistoryPage initialSearch={historyFilter} />
+      )}
+      {activePage !== 'ENTITY_LINKS' && activePage !== 'OOS' && activePage !== 'HISTORY' && (<>
 
       <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem' }}>
         <input
@@ -969,6 +1063,7 @@ export default function App() {
               onUpdateReview={updateReviewInDB}
               onSaveProcedureContent={saveProcedureContent}
               onDeleteProcedure={deleteProcedure}
+              onViewHistory={viewHistoryFor}
               entityLinks={entityLinks}
               tipSheetsBank={tipSheetsBank}
             />

@@ -375,6 +375,33 @@ const outOfScopeBanner = (reason) => {
   return `<div style="${wrap}"><div style="${box}"><div style="${label}">Status</div><div style="${title}">OUT OF SCOPE &mdash; ALL ENTITIES</div><div style="${body}">${esc(text)}</div></div></div>`;
 };
 
+// Hidden, inert data island embedded in OOS cards. The visible card collapses
+// to just the banner, but this carries the full structured fields (Order
+// Options, Entity Matrix, Tip Sheets, CR Notes, etc.) so unchecking Out of
+// Scope later restores the original content instead of dropping it. It is
+// display:none escaped JSON text — never rendered, never executed. The OOS
+// flags themselves are omitted so a restore doesn't immediately re-collapse.
+// Shared marker for the island — cardParser derives its querySelector from
+// this, and stripOOSPreserved removes it for search/diff display, so the
+// attribute string lives in exactly one place.
+export const OOS_PRESERVED_MARKER = 'data-oos-preserved="1"';
+
+// Remove the hidden island from card HTML. Used anywhere the HTML is treated
+// as searchable/displayable text (App search, History diffs) so the escaped
+// JSON payload never leaks into what users see or match against. The island
+// body is esc()'d JSON, so it can never contain a raw '<'.
+const OOS_PRESERVED_RE = new RegExp(`<div\\s+${OOS_PRESERVED_MARKER}[^>]*>[^<]*</div>`, 'gi');
+export const stripOOSPreserved = (html) =>
+  html ? String(html).replace(OOS_PRESERVED_RE, '') : '';
+
+const oosPreservedData = (data) => {
+  if (!data) return '';
+  const rest = { ...data };
+  delete rest.outOfScope;
+  delete rest.outOfScopeReason;
+  return `<div ${OOS_PRESERVED_MARKER} style="${styleAttr('display:none')}">${esc(JSON.stringify(rest))}</div>`;
+};
+
 // ─────────── Card builders ───────────
 
 const cardShell = (innerSections, kind = 'SCH') => {
@@ -397,7 +424,8 @@ export const buildCardHTML = (data, entityLinks = null) => {
     const sections = [
       headerSection(data.procedureName, data.headerImage, 'SCHEDULING INSTRUCTIONS'),
       modalityBanner(data.modality, data.modalityDescription),
-      outOfScopeBanner(data.outOfScopeReason)
+      outOfScopeBanner(data.outOfScopeReason),
+      oosPreservedData(data)
     ].join('');
     return cardShell(sections, 'SCH');
   }
@@ -434,7 +462,8 @@ export const buildCRCardHTML = (data, entityLinks = null) => {
       headerSection(data.procedureName, data.headerImage, 'CLINICAL REVIEW NOTES'),
       modalityBanner(data.modality, data.modalityDescription),
       modalityWarningBanner(data.modality),
-      outOfScopeBanner(data.outOfScopeReason)
+      outOfScopeBanner(data.outOfScopeReason),
+      oosPreservedData(data)
     ].join('');
     return cardShell(sections, 'CR');
   }

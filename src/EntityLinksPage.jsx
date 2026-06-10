@@ -16,8 +16,9 @@
 //     the card kind (SCH/CR).
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { doc, setDoc, deleteDoc, collection, getDocs } from 'firebase/firestore';
+import { doc, setDoc, collection, getDocs } from 'firebase/firestore';
 import { db } from './firebase';
+import { auditedSet, auditedDelete, logEvent, logBulk } from './audit';
 import { parseCard, parseCRCard, DEFAULT_ENTITIES } from './cardParser';
 import { buildCardHTML, buildCRCardHTML } from './cardBuilder';
 
@@ -34,30 +35,33 @@ export default function EntityLinksPage({ entityLinks }) {
     return [...new Set(list)].sort();
   }, [entityLinks]);
 
-  const [draft, setDraft] = useState(() => {
-    const seed = {};
-    for (const e of seededEntities) {
-      seed[e] = { sch: entityLinks?.[e]?.sch || '', cr: entityLinks?.[e]?.cr || '' };
-    }
-    return seed;
-  });
+  const [draftOverrides, setDraftOverrides] = useState({});
 
-  // Keep draft in sync when entityLinks changes (e.g., add/delete from elsewhere)
+  // Prune draftOverrides for entities that disappeared from entityLinks
+  // (e.g. another tab/admin deleted the doc via the live onSnapshot feed).
+  // Without this, a stale override would clobber the fresh server value if
+  // the entity were later re-added.
   useEffect(() => {
-    setDraft((prev) => {
-      const next = { ...prev };
-      for (const e of seededEntities) {
-        if (!next[e]) {
-          next[e] = { sch: entityLinks?.[e]?.sch || '', cr: entityLinks?.[e]?.cr || '' };
-        }
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setDraftOverrides((prev) => {
+      let changed = false;
+      const next = {};
+      for (const k of Object.keys(prev)) {
+        if (seededEntities.includes(k)) next[k] = prev[k];
+        else changed = true;
       }
-      // Drop draft rows whose entity no longer exists in canonical list
-      for (const e of Object.keys(next)) {
-        if (!seededEntities.includes(e)) delete next[e];
-      }
-      return next;
+      return changed ? next : prev;
     });
-  }, [seededEntities, entityLinks]);
+  }, [seededEntities]);
+
+  const draft = useMemo(() => {
+    const next = {};
+    for (const e of seededEntities) {
+      const current = entityLinks?.[e] || {};
+      next[e] = draftOverrides[e] || { sch: current.sch || '', cr: current.cr || '' };
+    }
+    return next;
+  }, [draftOverrides, entityLinks, seededEntities]);
 
   const [savingRow, setSavingRow] = useState(null);
   const [savedRow, setSavedRow] = useState(null);
@@ -78,14 +82,27 @@ export default function EntityLinksPage({ entityLinks }) {
   }, [entityLinks, draft, seededEntities]);
 
   const updateField = (entity, side, value) => {
-    setDraft((prev) => ({ ...prev, [entity]: { ...prev[entity], [side]: value } }));
+    setDraftOverrides((prev) => {
+      const current = entityLinks?.[entity] || {};
+      const existing = prev[entity] || { sch: current.sch || '', cr: current.cr || '' };
+      return { ...prev, [entity]: { ...existing, [side]: value } };
+    });
   };
 
   const saveRow = async (entity) => {
     setSavingRow(entity);
     try {
       const payload = { sch: (draft[entity]?.sch || '').trim(), cr: (draft[entity]?.cr || '').trim() };
-      await setDoc(doc(db, 'entityLinks', entity), payload, { merge: true });
+      await auditedSet('entityLinks', entity, payload, { label: entity });
+      // Drop the override now that it's persisted — the row goes back to
+      // tracking the live server value, so edits from other tabs aren't
+      // masked by a stale local copy (mirrors the delete/prune cleanup).
+      setDraftOverrides((prev) => {
+        if (!(entity in prev)) return prev;
+        const next = { ...prev };
+        delete next[entity];
+        return next;
+      });
       setSavedRow(entity);
       setTimeout(() => setSavedRow(null), 2000);
     } catch (e) {
@@ -117,7 +134,7 @@ export default function EntityLinksPage({ entityLinks }) {
     }
     setAdding(true);
     try {
-      await setDoc(doc(db, 'entityLinks', raw), { sch: '', cr: '' });
+      await auditedSet('entityLinks', raw, { sch: '', cr: '' }, { label: raw });
       setNewEntityCode('');
     } catch (e) {
       console.error('Add failed:', e);
@@ -139,7 +156,12 @@ export default function EntityLinksPage({ entityLinks }) {
     );
     if (!ok) return;
     try {
-      await deleteDoc(doc(db, 'entityLinks', entity));
+      await auditedDelete('entityLinks', entity, { label: entity });
+      setDraftOverrides((prev) => {
+        const next = { ...prev };
+        delete next[entity];
+        return next;
+      });
     } catch (e) {
       console.error('Delete failed:', e);
       alert(`Could not delete ${entity}: ${e.message || 'unknown error'}`);
@@ -172,10 +194,21 @@ export default function EntityLinksPage({ entityLinks }) {
         const newHTML = isSCH ? buildCardHTML(parsed, entityLinks) : buildCRCardHTML(parsed, entityLinks);
         if (newHTML === html) { skipped++; continue; }
         await setDoc(doc(db, 'procedures', id), { [fieldName]: newHTML }, { merge: true });
+        // Per-doc audit with the before HTML already in hand (no extra read):
+        // a parser regression here mass-rewrites cards, and these records are
+        // the only way History can restore them. Fire-and-forget — logEvent
+        // never throws and the sequential setDocs above pace the writes.
+        void logEvent({
+          coll: 'procedures', docId: id, label: data.Procedure || id,
+          action: 'update',
+          before: { [fieldName]: html },
+          after: { [fieldName]: newHTML },
+        });
         updated++;
         if (i % 25 === 0) setRegenStatus(`Updating... ${i + 1}/${all.length} processed, ${updated} written`);
       }
       setRegenStatus(`Done. ${updated} updated, ${skipped} skipped (OOS or empty).`);
+      await logBulk('procedures', 'Regenerate all cards', { updated, skipped, total: all.length });
     } catch (e) {
       console.error('Regenerate failed:', e);
       setRegenStatus(`Error: ${e.message || 'unknown'}`);
