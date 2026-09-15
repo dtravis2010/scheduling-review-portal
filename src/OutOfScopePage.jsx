@@ -10,6 +10,7 @@
 
 import React, { useMemo, useState } from 'react';
 import { auditedSet, auditedDelete } from './audit';
+import { toDocId, isValidDocId } from './docIds';
 import { OOS_MODALITY_NAME } from './modalities';
 import { buildOOSCardHTML } from './cardBuilder';
 
@@ -18,7 +19,7 @@ import { buildOOSCardHTML } from './cardBuilder';
 // shows the same labels this page writes.
 const MODALITY_MAP = OOS_MODALITY_NAME;
 
-const docKey = (name) => name.trim().replace(/\//g, '-');
+const docKey = (name) => toDocId(name.trim());
 
 export default function OutOfScopePage({ oosProcedures }) {
   const [newName, setNewName] = useState('');
@@ -45,6 +46,10 @@ export default function OutOfScopePage({ oosProcedures }) {
       return;
     }
     const key = docKey(name);
+    if (!isValidDocId(key)) {
+      setAddError('That name can\'t be used as a database id — pick a different name');
+      return;
+    }
     if (oosProcedures?.[key]) {
       setAddError(`${name} is already on the OOS list`);
       return;

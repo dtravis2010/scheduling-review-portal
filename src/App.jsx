@@ -8,6 +8,7 @@ import EntityLinksPage from './EntityLinksPage';
 import OutOfScopePage from './OutOfScopePage';
 import HistoryPage from './HistoryPage';
 import { auditedSet, auditedDelete, logEvent, logBulk } from './audit';
+import { toDocId, isValidDocId } from './docIds';
 import {
   STANDARD_STAT_BULLETS,
   STANDARD_ASAP_BULLETS,
@@ -46,6 +47,16 @@ const NewProcedureModal = ({ isOpen, onClose, onCreate, existingProcedures }) =>
     }
   }, [isOpen]);
 
+  // Escape closes the modal (unless a create is in flight)
+  React.useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e) => {
+      if (e.key === 'Escape' && !busy) onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isOpen, busy, onClose]);
+
   if (!isOpen) return null;
 
   const handleSubmit = async () => {
@@ -59,15 +70,19 @@ const NewProcedureModal = ({ isOpen, onClose, onCreate, existingProcedures }) =>
       setError('Pick at least one of Scheduling or Clinical Review.');
       return;
     }
-    // Uniqueness check
-    const existsSCH = existingProcedures.some(p => p.Procedure === `${trimmed}_SCH`);
-    const existsCR = existingProcedures.some(p => p.Procedure === `${trimmed}_CR`);
+    // Uniqueness check on the sanitized doc id, not the raw name — slashes
+    // become dashes in Firestore ids, so "CT ABD-PLV" and "CT ABD/PLV" are the
+    // SAME document and creating one would merge-overwrite the other.
+    const existing = (suffix) =>
+      existingProcedures.find(p => toDocId(p.Procedure) === toDocId(`${trimmed}${suffix}`));
+    const existsSCH = existing('_SCH');
+    const existsCR = existing('_CR');
     if (makeSCH && existsSCH) {
-      setError(`A scheduling card named "${trimmed}_SCH" already exists.`);
+      setError(`A scheduling card named "${existsSCH.Procedure}" already exists.`);
       return;
     }
     if (makeCR && existsCR) {
-      setError(`A clinical review card named "${trimmed}_CR" already exists.`);
+      setError(`A clinical review card named "${existsCR.Procedure}" already exists.`);
       return;
     }
 
@@ -111,6 +126,7 @@ const NewProcedureModal = ({ isOpen, onClose, onCreate, existingProcedures }) =>
             placeholder="e.g. CT HEAD"
             value={name}
             onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && !busy) handleSubmit(); }}
             autoFocus
           />
           <div style={{ fontSize: '0.7rem', color: 'var(--text-muted, #94a3b8)', marginTop: 4 }}>
@@ -175,14 +191,53 @@ const MODALITY_SHORT = {
   5: 'Ultrasound'
 };
 
-// Memoized HTML content to prevent re-renders when typing in comments
+// Banner shown when a Firestore listener hits its (terminal) error callback.
+const CONNECTION_ERROR_MSG = 'Live connection to the database failed. Reload the page to reconnect — if this keeps happening, check your internet connection or Firestore permissions.';
+
+// Tabs as real <button>s so keyboard users can Tab + Enter through them.
+const TabButton = ({ active, onClick, children, style }) => (
+  <button
+    type="button"
+    className={`tab ${active ? 'active' : ''}`}
+    onClick={onClick}
+    style={style}
+  >
+    {children}
+  </button>
+);
+
+// Memoized HTML content to prevent re-renders when typing in comments.
+// Card HTML embeds header images with SharePoint-relative paths
+// (/sites/VCCEnterprise/...) that only resolve on the live SharePoint host —
+// in this review portal every one 404s and renders a broken-image icon. We
+// hide any image that fails to load so the cards stay clean; the images still
+// appear correctly once the HTML is published back to SharePoint.
 const HtmlContent = React.memo(({ html }) => {
+  const ref = React.useRef(null);
+
+  React.useEffect(() => {
+    const root = ref.current;
+    if (!root) return;
+    const imgs = root.querySelectorAll('img');
+    const hide = (img) => {
+      img.style.display = 'none';
+      // Collapse the fixed-width header image cell so the title can use the
+      // full width instead of leaving an empty gap on the right.
+      const cell = img.closest('td');
+      if (cell && !cell.textContent.trim()) cell.style.width = '0';
+    };
+    imgs.forEach((img) => {
+      if (img.complete && img.naturalWidth === 0) hide(img);
+      else img.addEventListener('error', () => hide(img), { once: true });
+    });
+  }, [html]);
+
   if (!html) {
     return (
       <div style={{ color: 'var(--text-muted)', fontStyle: 'italic', padding: '1rem' }}>No content available for this view.</div>
     );
   }
-  return <div dangerouslySetInnerHTML={{ __html: html }} />;
+  return <div ref={ref} dangerouslySetInnerHTML={{ __html: html }} />;
 });
 
 // Component for an individual Procedure item
@@ -198,6 +253,8 @@ const ProcedureCard = React.memo(({ group, page, reviewData, onUpdateReview, onS
   const dbKey = `${group.baseName}_${page}`.replace(/\//g, '-');
   const isFinished = reviewData?.isFinished || false;
   const canEdit = !!item; // Both SCH and CR are editable now
+  const savedComment = reviewData?.comment ?? '';
+  const hasUnsavedComment = comment !== savedComment;
 
   // Sync the local text box with the Firebase database
   useEffect(() => {
@@ -451,10 +508,18 @@ const ProcedureCard = React.memo(({ group, page, reviewData, onUpdateReview, onS
               onChange={(e) => setComment(e.target.value)}
             />
             <div className="button-group">
+              {hasUnsavedComment && (
+                <span className="unsaved-status">● Unsaved changes</span>
+              )}
               <span className={`saved-status ${savedStatus ? 'visible' : ''}`}>
                 ✓ Saved to Database
               </span>
-              <button className="btn btn-primary" onClick={handleSave}>
+              <button
+                className="btn btn-primary"
+                onClick={handleSave}
+                disabled={!hasUnsavedComment}
+                title={hasUnsavedComment ? 'Save this comment to the database' : 'No changes to save'}
+              >
                 Save Comment
               </button>
             </div>
@@ -478,6 +543,9 @@ export default function App() {
   const [tipSheetsBank, setTipSheetsBank] = useState([]); // [{ id, displayName, category, filename, url }]
   const [isUploading, setIsUploading] = useState(false);
   const [showNewModal, setShowNewModal] = useState(false);
+  const [isLoading, setIsLoading] = useState(true); // true until the first server-backed procedures snapshot lands
+  const [isOffline, setIsOffline] = useState(false); // last procedures snapshot was an empty cache read
+  const [connectionError, setConnectionError] = useState('');
 
   // Sync with Firestore
   useEffect(() => {
@@ -489,16 +557,33 @@ export default function App() {
       setReviewsDB(dataStore);
     }, (error) => {
       console.error("Error reading reviews from Firebase:", error);
+      setConnectionError(CONNECTION_ERROR_MSG);
     });
 
-    const unsubProcedures = onSnapshot(collection(db, "procedures"), (snapshot) => {
+    // includeMetadataChanges: the offline -> online transition on an EMPTY
+    // collection is a metadata-only event (fromCache true -> false, no doc
+    // changes) that Firestore suppresses by default — without it the
+    // "waiting for connection" state below could never clear.
+    const unsubProcedures = onSnapshot(collection(db, "procedures"), { includeMetadataChanges: true }, (snapshot) => {
       const loaded = [];
       snapshot.forEach(doc => {
         loaded.push(doc.data());
       });
       setDbProcedures(loaded);
+      // With no network Firestore still raises an EMPTY snapshot from cache
+      // (~10s after load, via the success callback — no error). That means
+      // "offline", not "the database is empty": stay in the loading state
+      // until a server-backed snapshot arrives.
+      const offlineEmpty = snapshot.empty && snapshot.metadata.fromCache;
+      setIsOffline(offlineEmpty);
+      if (!offlineEmpty) setIsLoading(false);
+      // Deliberately NOT clearing connectionError here: an errored listener is
+      // torn down for good, so this callback could only ever be hiding an
+      // error raised by a *different* listener (e.g. reviews).
     }, (error) => {
       console.error("Error reading procedures from Firebase:", error);
+      setIsLoading(false);
+      setConnectionError(CONNECTION_ERROR_MSG);
     });
 
     // Subscribe to entityLinks — keyed by entity code, fields { sch, cr }.
@@ -548,12 +633,42 @@ export default function App() {
     setIsUploading(true);
     try {
       const text = await file.text();
-      const jsonData = JSON.parse(text);
-      if (!Array.isArray(jsonData)) {
-        alert("JSON file must contain an array of procedures");
-        setIsUploading(false);
+      let jsonData;
+      try {
+        jsonData = JSON.parse(text);
+      } catch (parseErr) {
+        alert(`"${file.name}" is not valid JSON:\n${parseErr.message}`);
         return;
       }
+      if (!Array.isArray(jsonData)) {
+        alert("JSON file must contain an array of procedures");
+        return;
+      }
+      const nonObjects = jsonData.filter(i => i === null || typeof i !== 'object' || Array.isArray(i)).length;
+      if (nonObjects > 0) {
+        alert(`Upload cancelled — ${nonObjects} entr${nonObjects === 1 ? 'y is' : 'ies are'} not a procedure object (null, a number, text or a nested array). Fix the file and try again.`);
+        return;
+      }
+      const withName = jsonData.filter(i => i?.Procedure);
+      if (withName.length === 0) {
+        alert('No items with a "Procedure" field were found in this file — nothing to upload.');
+        return;
+      }
+      // Every page keys a procedure by `${baseName}_${SCH|CR}`, so a name
+      // without that suffix would be written under one id and read under
+      // another (orphaned review, undeletable card). Reject the file rather
+      // than seed a doc nothing can reach. Same for ids Firestore refuses.
+      const invalid = withName.filter(i =>
+        typeof i.Procedure !== 'string' ||
+        !/_(SCH|CR)$/.test(i.Procedure) ||
+        !isValidDocId(toDocId(i.Procedure)));
+      if (invalid.length > 0) {
+        const sample = invalid.slice(0, 5).map(i => `  • ${JSON.stringify(i.Procedure)}`).join('\n');
+        const more = invalid.length > 5 ? `\n  …and ${invalid.length - 5} more` : '';
+        alert(`Upload cancelled — ${invalid.length} item${invalid.length === 1 ? ' has' : 's have'} an invalid "Procedure" name. Each must be text ending in _SCH or _CR (and not ".", ".." or __name__):\n${sample}${more}`);
+        return;
+      }
+      const validCount = withName.length;
 
       // Snapshot the reviewer comments this upload is about to wipe — the
       // procedure HTML can be re-uploaded from the JSON file, but the comments
@@ -566,32 +681,39 @@ export default function App() {
         if (prev?.comment) clearedComments.push({ procedure: item.Procedure, comment: prev.comment });
       }
 
+      // Uploading resets review status and clears comments — make sure the
+      // user knows before anything is written.
+      const warnComments = clearedComments.length > 0
+        ? `\n⚠ ${clearedComments.length} existing reviewer comment${clearedComments.length === 1 ? '' : 's'} will be cleared (a copy is kept in History).`
+        : '';
+      const proceed = window.confirm(
+        `Upload ${validCount} procedure${validCount === 1 ? '' : 's'} from "${file.name}"?\n\n` +
+        `Matching procedures will be overwritten and their review status reset to Pending.${warnComments}`
+      );
+      if (!proceed) return;
+
       // Chunk uploads to avoid 500 op limit on Firestore batched writes
       const chunkSize = 200; // Lower chunk size to account for review clears (2 ops per item)
       let count = 0;
       try {
-        for (let i = 0; i < jsonData.length; i += chunkSize) {
-          const chunk = jsonData.slice(i, i + chunkSize);
+        // Only the pre-validated items — every one of these has a string
+        // Procedure with a _SCH/_CR suffix that maps to a legal doc id.
+        for (let i = 0; i < withName.length; i += chunkSize) {
+          const chunk = withName.slice(i, i + chunkSize);
           const batch = writeBatch(db);
-          let chunkCount = 0;
 
           chunk.forEach(item => {
-            if (item.Procedure) {
-              // Replace any slashes to prevent subcollections
-              const cleanId = item.Procedure.replace(/\//g, '-');
-              const docRef = doc(db, 'procedures', cleanId);
-              batch.set(docRef, item, { merge: true });
+            const cleanId = toDocId(item.Procedure);
+            const docRef = doc(db, 'procedures', cleanId);
+            batch.set(docRef, item, { merge: true });
 
-              // Clear the reviewer comment/notes for this procedure
-              const reviewRef = doc(db, 'reviews', cleanId);
-              batch.set(reviewRef, { comment: '', isFinished: false }, { merge: true });
-
-              chunkCount++;
-            }
+            // Clear the reviewer comment/notes for this procedure
+            const reviewRef = doc(db, 'reviews', cleanId);
+            batch.set(reviewRef, { comment: '', isFinished: false }, { merge: true });
           });
 
           await batch.commit();
-          count += chunkCount;
+          count += chunk.length;
         }
       } finally {
         // Earlier chunks commit even if a later one throws — record whatever
@@ -607,11 +729,11 @@ export default function App() {
       alert(`Successfully uploaded ${count} procedures! Reviewer notes have been cleared for uploaded items.`);
     } catch (e) {
       console.error(e);
-      alert("Error parsing JSON or uploading to database");
+      alert(`Upload failed: ${e.message || 'unknown error'}\nSome items may already have been written — check the History tab.`);
+    } finally {
+      setIsUploading(false);
+      event.target.value = null; // reset input so the same file can be picked again
     }
-
-    setIsUploading(false);
-    event.target.value = null; // reset input
   };
 
   const updateReviewInDB = async (procedureKey, updateData, label) => {
@@ -731,20 +853,31 @@ export default function App() {
 
   // Delete a procedure (and optionally its sibling on the other page) from
   // both procedures and reviews collections.
+  // Attempts every target, then rethrows a combined error so the card's
+  // "Delete failed" alert actually fires. If a procedure delete is rejected
+  // its review doc is left alone — wiping the comment/Done flag of a card
+  // that still exists would be worse than leaving both in place.
   const deleteProcedure = useCallback(async (baseName, deleteBoth) => {
     const targets = deleteBoth ? [`${baseName}_SCH`, `${baseName}_CR`] : [`${baseName}_${activePage}`];
+    const failures = [];
     for (const proc of targets) {
       const cleanId = proc.replace(/\//g, '-');
       try {
         await auditedDelete('procedures', cleanId, { label: proc });
       } catch (e) {
         console.warn(`procedures/${cleanId} delete:`, e.message);
+        failures.push(`${proc}: ${e.message || 'delete rejected'}`);
+        continue;
       }
       try {
         await auditedDelete('reviews', cleanId, { label: proc });
       } catch (e) {
         console.warn(`reviews/${cleanId} delete:`, e.message);
+        failures.push(`${proc} (review): ${e.message || 'delete rejected'}`);
       }
+    }
+    if (failures.length > 0) {
+      throw new Error(failures.join('\n'));
     }
   }, [activePage]);
 
@@ -755,7 +888,7 @@ export default function App() {
     setActivePage('HISTORY');
   }, []);
 
-  const { groupedData, availableModalities } = useMemo(() => {
+  const { groupedData, availableModalities, pageTotal } = useMemo(() => {
     const groups = {};
     const mods = new Set();
 
@@ -785,10 +918,16 @@ export default function App() {
       }
     });
 
+    // How many groups have a card for this page at all — before the search /
+    // modality filters — so the empty state can tell "nothing on this page"
+    // apart from "nothing matches your filter".
+    let pageTotal = 0;
+
     const filtered = Object.values(groups).filter(group => {
       // Only show procedures that have content for the active page
       const item = activePage === 'SCH' ? group.schItem : group.crItem;
       if (!item) return false;
+      pageTotal++;
 
       const term = searchTerm.toLowerCase();
       const inBaseName = group.baseName.toLowerCase().includes(term);
@@ -807,7 +946,8 @@ export default function App() {
 
     return {
       groupedData: filtered,
-      availableModalities: Array.from(mods).sort()
+      availableModalities: Array.from(mods).sort(),
+      pageTotal
     };
   }, [searchTerm, selectedModality, activePage, dbProcedures]);
 
@@ -838,7 +978,8 @@ export default function App() {
       return;
     }
 
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    // BOM so Excel opens the file as UTF-8 instead of mangling accents/symbols
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.setAttribute("href", url);
@@ -846,6 +987,7 @@ export default function App() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   // Export current procedures (filtered by active page = SCH or CR) as a Power Automate update JSON.
@@ -956,42 +1098,48 @@ export default function App() {
         </div>
       </div>
 
+      {connectionError && (
+        <div className="error-banner" role="alert">
+          ⚠ {connectionError}
+        </div>
+      )}
+
       <div className="tabs" style={{ marginBottom: '1.5rem' }}>
-        <div
-          className={`tab ${activePage === 'SCH' ? 'active' : ''}`}
+        <TabButton
+          active={activePage === 'SCH'}
           onClick={() => { setActivePage('SCH'); setActiveTab('pending'); }}
           style={{ fontWeight: 700, fontSize: '1rem' }}
         >
           Scheduling
-        </div>
-        <div
-          className={`tab ${activePage === 'CR' ? 'active' : ''}`}
+        </TabButton>
+        <TabButton
+          active={activePage === 'CR'}
           onClick={() => { setActivePage('CR'); setActiveTab('pending'); }}
           style={{ fontWeight: 700, fontSize: '1rem' }}
         >
           Clinical Review
-        </div>
-        <div
-          className={`tab ${activePage === 'ENTITY_LINKS' ? 'active' : ''}`}
+        </TabButton>
+        <TabButton
+          active={activePage === 'ENTITY_LINKS'}
           onClick={() => setActivePage('ENTITY_LINKS')}
           style={{ fontWeight: 700, fontSize: '1rem' }}
         >
           Entity Links
-        </div>
-        <div
-          className={`tab ${activePage === 'OOS' ? 'active' : ''}`}
+        </TabButton>
+        <TabButton
+          active={activePage === 'OOS'}
           onClick={() => setActivePage('OOS')}
           style={{ fontWeight: 700, fontSize: '1rem' }}
         >
           Out of Scope
-        </div>
-        <div
-          className={`tab ${activePage === 'HISTORY' ? 'active' : ''}`}
+        </TabButton>
+        <TabButton
+          active={activePage === 'HISTORY'}
           onClick={() => { setHistoryFilter(''); setActivePage('HISTORY'); }}
           style={{ fontWeight: 700, fontSize: '1rem' }}
         >
           History
-        </div>
+        </TabButton>
       </div>
 
       {activePage === 'ENTITY_LINKS' && (
@@ -1005,15 +1153,28 @@ export default function App() {
       )}
       {activePage !== 'ENTITY_LINKS' && activePage !== 'OOS' && activePage !== 'HISTORY' && (<>
 
-      <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem' }}>
-        <input
-          type="text"
-          className="search-bar"
-          placeholder="Filter procedures or instructions..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          style={{ marginBottom: 0, flex: 1 }}
-        />
+      <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem', flexWrap: 'wrap' }}>
+        <div style={{ position: 'relative', flex: 1, minWidth: '220px' }}>
+          <input
+            type="text"
+            className="search-bar"
+            placeholder="Filter procedures or instructions..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            style={{ marginBottom: 0, width: '100%', paddingRight: '2.75rem' }}
+          />
+          {searchTerm && (
+            <button
+              type="button"
+              className="search-clear"
+              onClick={() => setSearchTerm('')}
+              title="Clear search"
+              aria-label="Clear search"
+            >
+              ✕
+            </button>
+          )}
+        </div>
         <select
           className="search-bar"
           value={selectedModality}
@@ -1031,24 +1192,18 @@ export default function App() {
       </div>
 
       <div className="tabs" style={{ marginBottom: '1.5rem' }}>
-        <div
-          className={`tab ${activeTab === 'pending' ? 'active' : ''}`}
-          onClick={() => setActiveTab('pending')}
-        >
+        <TabButton active={activeTab === 'pending'} onClick={() => setActiveTab('pending')}>
           Pending Reviews ({groupedData.filter(g => {
             const dbKey = `${g.baseName}_${activePage}`.replace(/\//g, '-');
             return !reviewsDB[dbKey]?.isFinished;
           }).length})
-        </div>
-        <div
-          className={`tab ${activeTab === 'finished' ? 'active' : ''}`}
-          onClick={() => setActiveTab('finished')}
-        >
+        </TabButton>
+        <TabButton active={activeTab === 'finished'} onClick={() => setActiveTab('finished')}>
           Finished ({groupedData.filter(g => {
             const dbKey = `${g.baseName}_${activePage}`.replace(/\//g, '-');
             return reviewsDB[dbKey]?.isFinished;
           }).length})
-        </div>
+        </TabButton>
       </div>
 
       <div className="procedure-list">
@@ -1074,10 +1229,59 @@ export default function App() {
             Showing 100 of {displayedData.length} results. Please use the search bar to find more.
           </div>
         )}
-        {displayedData.length === 0 && (
-          <div style={{ textAlign: 'center', margin: '2rem 0', color: 'var(--text-muted)' }}>
-            No procedures found in this tab.
+        {isLoading && (
+          <div className="list-status">
+            <span className="spinner" aria-hidden="true" />
+            {isOffline
+              ? 'Waiting for the database connection… check your internet connection.'
+              : 'Loading procedures from the database…'}
           </div>
+        )}
+        {/* When a listener has failed the red banner above already explains it —
+            don't also claim the database is empty under it. */}
+        {!isLoading && !connectionError && displayedData.length === 0 && (
+          pageTotal === 0 ? (
+            <div className="list-status">
+              {dbProcedures.length === 0
+                ? 'The database is empty.'
+                : `No ${activePage === 'SCH' ? 'Scheduling' : 'Clinical Review'} procedures in the database yet.`}
+              {' '}Use <strong>+ Upload JSON Batch</strong> or <strong>+ New Procedure</strong> above to add {dbProcedures.length === 0 ? 'procedures' : 'one'}.
+            </div>
+          ) : (searchTerm || selectedModality !== 'All') && groupedData.length > 0 ? (
+            // The filter matched, the matches are just all on the other tab —
+            // don't tell the user to clear a filter that is working.
+            <div className="list-status">
+              {groupedData.length === 1
+                ? 'The 1 matching procedure is'
+                : `All ${groupedData.length} matching procedures are`} on the {activeTab === 'pending' ? 'Finished' : 'Pending Reviews'} tab.
+              <button
+                type="button"
+                className="btn"
+                onClick={() => setActiveTab(activeTab === 'pending' ? 'finished' : 'pending')}
+                style={{ marginLeft: '0.75rem', background: 'rgba(255,255,255,0.08)', color: 'var(--text-main)' }}
+              >
+                Go there
+              </button>
+            </div>
+          ) : (searchTerm || selectedModality !== 'All') ? (
+            <div className="list-status">
+              No procedures match your search or modality filter.
+              <button
+                type="button"
+                className="btn"
+                onClick={() => { setSearchTerm(''); setSelectedModality('All'); }}
+                style={{ marginLeft: '0.75rem', background: 'rgba(255,255,255,0.08)', color: 'var(--text-main)' }}
+              >
+                Clear filters
+              </button>
+            </div>
+          ) : (
+            <div className="list-status">
+              {activeTab === 'pending'
+                ? 'Nothing pending — every procedure on this page is finished. 🎉'
+                : 'No finished procedures yet. Mark a card as Done and it will move here.'}
+            </div>
+          )
         )}
       </div>
       </>)}
