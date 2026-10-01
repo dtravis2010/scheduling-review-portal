@@ -17,7 +17,9 @@ Scheduling Review Portal — a React web app for medical professionals to review
 npm run dev        # Start dev server
 npm run build      # Production build to dist/
 npm run lint       # ESLint (js/jsx)
-npm test           # Node test runner: search rules + sample build has no Firebase
+npm test           # Node test runner (search, build guard) + Vitest (src/**/*.spec.*: editing)
+npm run test:emulator  # Security rules + Firestore store on the local emulator (Java needed)
+npm run dev:emulator   # Dev server with editing on the local emulator, seeded with sample data
 npm run preview    # Preview production build
 npm run deploy     # Build + deploy to GitHub Pages
 ```
@@ -51,6 +53,14 @@ src/
 - Default build is **sample**: fictional data only, Firebase not bundled (guarded by `src/sampleBuild.test.js`).
 - `VITE_DATA_MODE=live` adds the Edit / Review tools, which read/write production Firestore.
 - Keep the `import.meta.env.VITE_DATA_MODE === 'live'` check inline in `Home.jsx`; moving it into a shared variable stops Vite from dropping Firebase.
+
+## Supervisor editing (`src/editing/`)
+
+- Draft → preview → publish with a required change note; versions are append-only; conflict flags can be fixed or marked as intended. No second approver.
+- Logic is pure JS on a pluggable store: `editingService.js` (+ `validation.js`, `conflicts.js`, `examFields.js`). `memoryStore.js` backs the preview and Vitest; `firestoreStore.js` backs the emulator.
+- Default build: `previewBackend.js` (browser localStorage, fictional people in `previewPeople.js`, pick-a-person sign-in).
+- `VITE_EDITING_BACKEND=emulator`: `emulatorBackend.js`, email-link sign-in, project `demo-scheduling-review` (offline-only). Keep that env check inline in `EditingContext.jsx` so Firebase stays out of preview builds.
+- `firestore.rules` covers only the editing collections (`exams`, `examVersions`, `examDrafts`, `supervisors`). Never deploy it to the production project as-is.
 
 ## Firebase / Firestore
 

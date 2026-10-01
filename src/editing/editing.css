@@ -1,0 +1,543 @@
+/* Editing screens. Uses the shared tokens in index.css and lookup.css. */
+
+.account-bar {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0.5rem 2rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  align-items: center;
+  justify-content: flex-end;
+  font-size: 0.9rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.account-name {
+  margin-right: auto;
+  color: var(--text-muted);
+}
+
+.account-name strong {
+  color: var(--text-main);
+}
+
+.button-primary,
+.button-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.75rem;
+  padding: 0.5rem 1.1rem;
+  border-radius: 0.5rem;
+  font: inherit;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.button-primary {
+  /* --accent-hover keeps white text above 4.5:1 contrast. */
+  background: var(--accent-hover);
+  color: #fff;
+  border: 1px solid var(--accent-hover);
+}
+
+.button-primary:hover {
+  background: #1d4ed8;
+}
+
+.button-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.button-secondary {
+  background: transparent;
+  color: var(--text-main);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.button-secondary:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.button-primary:focus-visible,
+.button-secondary:focus-visible,
+.choice-button:focus-visible,
+.edit-form input:focus-visible,
+.edit-form textarea:focus-visible,
+.edit-form select:focus-visible,
+.edit-page h1:focus-visible,
+.notice-panel h1:focus-visible {
+  outline: 3px solid #93c5fd;
+  outline-offset: 2px;
+}
+
+.action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+  margin-top: 1rem;
+}
+
+.action-row--sticky {
+  position: sticky;
+  bottom: 0;
+  background: var(--primary-bg);
+  padding: 0.75rem 0;
+  border-top: 1px solid var(--border);
+}
+
+.save-state {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.edit-page {
+  max-width: 52rem;
+  margin-top: 1rem;
+}
+
+.edit-header h1 {
+  font-size: 1.6rem;
+  line-height: 1.25;
+  margin-bottom: 0.5rem;
+}
+
+.edit-banner {
+  border-left: 4px solid #eab308;
+  background: rgba(234, 179, 8, 0.1);
+  border-radius: 0.4rem;
+  padding: 0.6rem 0.9rem;
+  margin: 0.75rem 0;
+}
+
+.edit-banner ul,
+.callout ul,
+.form-message ul {
+  margin: 0.4rem 0 0 1.25rem;
+}
+
+.edit-banner--warn {
+  border-left-color: #f97316;
+  background: rgba(249, 115, 22, 0.12);
+}
+
+.edit-banner--error {
+  border-left-color: #f87171;
+  background: rgba(248, 113, 113, 0.12);
+}
+
+.edit-banner .button-secondary {
+  margin-top: 0.6rem;
+}
+
+.edit-steps {
+  display: flex;
+  gap: 1rem;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.edit-steps .is-current {
+  color: var(--text-main);
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.edit-section {
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  background: var(--glass-bg);
+  padding: 1.25rem;
+  margin-top: 1rem;
+}
+
+.edit-section h2 {
+  font-size: 1.15rem;
+  margin-bottom: 0.75rem;
+}
+
+.edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.edit-form .edit-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.edit-form fieldset {
+  border: none;
+  padding: 0;
+  margin: 0;
+}
+
+.edit-form legend {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 0.35rem;
+}
+
+.edit-form input[type='text'],
+.edit-form input[type='email'],
+.edit-form textarea,
+.edit-form select {
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0.6rem 0.8rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background-color: var(--secondary-bg);
+  color: var(--text-main);
+  font: inherit;
+}
+
+.edit-form textarea {
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.edit-form textarea.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9rem;
+}
+
+.edit-form [aria-invalid='true'] {
+  border-color: #f87171;
+}
+
+.field-help {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.field-errors,
+.form-message--error {
+  color: #fca5a5;
+  font-size: 0.9rem;
+}
+
+.form-message--ok {
+  color: #86efac;
+}
+
+.form-message--warn {
+  color: #fdba74;
+}
+
+.radio-line {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+  padding: 0.3rem 0;
+  cursor: pointer;
+}
+
+.radio-line input {
+  margin-top: 0.3rem;
+  width: 1.1rem;
+  height: 1.1rem;
+}
+
+.facility-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.facility-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: 0.5rem 1rem;
+  align-items: center;
+  padding: 0.6rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.facility-choice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.edit-form .facility-choice legend {
+  width: 100%;
+  color: var(--text-main);
+  font-size: 0.95rem;
+}
+
+.radio-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 2.5rem;
+  padding: 0.3rem 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.radio-pill:has(input:checked) {
+  font-weight: 700;
+}
+
+.radio-pill--yes:has(input:checked) {
+  border-color: #22c55e;
+  background: rgba(34, 197, 94, 0.15);
+}
+
+.radio-pill--limited:has(input:checked) {
+  border-color: #eab308;
+  background: rgba(234, 179, 8, 0.15);
+}
+
+.radio-pill--no:has(input:checked) {
+  border-color: #f87171;
+  background: rgba(248, 113, 113, 0.15);
+}
+
+.radio-pill:has(input:focus-visible) {
+  outline: 3px solid #93c5fd;
+  outline-offset: 2px;
+}
+
+.tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.4rem 0;
+}
+
+.tag {
+  display: inline-block;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-muted);
+  margin-left: 0.4rem;
+  vertical-align: middle;
+}
+
+.tag-row .tag {
+  margin-left: 0;
+}
+
+.tag--search {
+  background: rgba(96, 165, 250, 0.2);
+  color: #bfdbfe;
+}
+
+.tag--guidance {
+  background: rgba(167, 139, 250, 0.2);
+  color: #ddd6fe;
+}
+
+.tag--current {
+  background: rgba(34, 197, 94, 0.2);
+  color: #bbf7d0;
+}
+
+.change-list {
+  margin: 0.5rem 0 0 1.25rem;
+}
+
+.change-list > li + li {
+  margin-top: 0.5rem;
+}
+
+.change-list ul {
+  margin-left: 1.25rem;
+  color: var(--text-muted);
+}
+
+.detail-pane--static {
+  position: static;
+  max-height: none;
+}
+
+.history-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.history-item {
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  background: var(--glass-bg);
+  padding: 1rem 1.25rem;
+}
+
+.history-item h2 {
+  font-size: 1.1rem;
+}
+
+.history-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.25rem 1rem;
+  align-items: baseline;
+}
+
+.history-note {
+  margin: 0.4rem 0;
+}
+
+.history-item details {
+  margin: 0.5rem 0;
+}
+
+.history-item summary {
+  cursor: pointer;
+  color: #93c5fd;
+}
+
+.history-item > .button-secondary {
+  margin-top: 0.5rem;
+}
+
+.restore-form {
+  margin-top: 0.75rem;
+}
+
+.choice-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.choice-button {
+  width: 100%;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: var(--secondary-bg);
+  color: var(--text-main);
+  font: inherit;
+  cursor: pointer;
+}
+
+.choice-button:hover {
+  border-color: var(--accent);
+}
+
+.hub-links {
+  margin: 0.75rem 0 0 1.25rem;
+  line-height: 2;
+}
+
+.hub-links a {
+  color: #93c5fd;
+}
+
+.hub-preview-note {
+  margin-top: 1rem;
+  font-size: 0.85rem;
+}
+
+.exam-footer {
+  margin-top: 1rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.75rem;
+}
+
+.exam-footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  align-items: baseline;
+}
+
+.callout--warn {
+  border-left-color: #f97316;
+  background: rgba(249, 115, 22, 0.12);
+}
+
+.supervisors-table {
+  margin-top: 1rem;
+}
+
+@media (max-width: 560px) {
+  .account-bar {
+    padding: 0.5rem 1rem;
+    justify-content: flex-start;
+  }
+
+  .account-name {
+    width: 100%;
+  }
+
+  .facility-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .edit-section {
+    padding: 1rem;
+  }
+
+  .action-row .button-primary,
+  .action-row .button-secondary {
+    flex: 1 1 100%;
+  }
+}
+
+.field .radio-line {
+  font-size: 1rem;
+  font-weight: 400;
+  color: var(--text-main);
+}
+
+@media (max-width: 560px) {
+  .action-row--sticky {
+    flex-wrap: nowrap;
+  }
+
+  .action-row--sticky .button-primary,
+  .action-row--sticky .button-secondary {
+    flex: 1 1 0;
+  }
+
+  .action-row--sticky .save-state {
+    display: none;
+  }
+}
+
+.button-danger {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+  padding: 0.5rem 1.1rem;
+  border-radius: 0.5rem;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  background: #b91c1c;
+  color: #fff;
+  border: 1px solid #b91c1c;
+}
+
+.button-danger:focus-visible {
+  outline: 3px solid #93c5fd;
+  outline-offset: 2px;
+}

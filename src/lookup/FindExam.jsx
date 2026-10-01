@@ -4,7 +4,8 @@ import { getPublishedExams, getFacilities, getCategories } from './examSource';
 import ExamDetail from './ExamDetail';
 import { AvailabilityBadge } from './Availability';
 
-const EXAMS = getPublishedExams();
+// `exams` lets the editing flow pass in the published set (sample data plus any
+// edits published in the preview). Retired exams are left out of lookups.
 const FACILITIES = getFacilities();
 const CATEGORIES = getCategories();
 
@@ -39,24 +40,25 @@ const ResultItem = ({ match, facilityId, selected, onSelect }) => {
   );
 };
 
-const FindExam = ({ reviewHref }) => {
+const FindExam = ({ reviewHref, exams: examsIn = getPublishedExams(), initialExamId = '', renderExamFooter }) => {
+  const exams = useMemo(() => examsIn.filter((e) => e.active !== false), [examsIn]);
   const [query, setQuery] = useState('');
   const [facilityId, setFacilityId] = useState('');
   const [category, setCategory] = useState('');
-  const [selectedId, setSelectedId] = useState('');
+  const [selectedId, setSelectedId] = useState(initialExamId);
   const [showHidden, setShowHidden] = useState(false);
-  const [mobileView, setMobileView] = useState('list');
+  const [mobileView, setMobileView] = useState(initialExamId ? 'detail' : 'list');
   const detailRef = useRef(null);
   const ids = { search: useId(), facility: useId(), category: useId(), count: useId() };
 
   const { results, notOfferedAtFacility } = useMemo(
-    () => searchExams(EXAMS, { query, facilityId, category }),
-    [query, facilityId, category],
+    () => searchExams(exams, { query, facilityId, category }),
+    [exams, query, facilityId, category],
   );
 
   const visible = showHidden ? [...results, ...notOfferedAtFacility] : results;
   // Changing the search or filters clears selectedId (top result shows again).
-  const selected = pickSelectedExam(EXAMS, selectedId, visible);
+  const selected = pickSelectedExam(exams, selectedId, visible);
   const facilityName = FACILITIES.find((f) => f.id === facilityId)?.name;
 
   const openExam = (id) => {
@@ -210,10 +212,11 @@ const FindExam = ({ reviewHref }) => {
           {selected ? (
             <ExamDetail
               exam={selected}
-              exams={EXAMS}
+              exams={exams}
               facilities={FACILITIES}
               facilityId={facilityId}
               onOpenExam={openExam}
+              footer={renderExamFooter?.(selected)}
             />
           ) : (
             <p className="empty-state">Pick an exam to see its guidance.</p>

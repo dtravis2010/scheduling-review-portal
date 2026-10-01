@@ -19,7 +19,7 @@ const GuidanceList = ({ title, items }) => (
 const formatDate = (iso) =>
   new Date(`${iso}T00:00:00`).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
 
-const ExamDetail = ({ exam, exams, facilities, facilityId, onOpenExam }) => {
+const ExamDetail = ({ exam, exams, facilities, facilityId, onOpenExam, footer = null }) => {
   const parent = exam.kind === 'protocol' ? exams.find((e) => e.id === exam.parentId) : null;
   const protocols = protocolsFor(exams, exam.id);
   const selectedAvailability = facilityId ? availabilityAt(exam, facilityId) : null;
@@ -134,6 +134,7 @@ const ExamDetail = ({ exam, exams, facilities, facilityId, onOpenExam }) => {
       </details>
 
       <p className="muted reviewed">Guidance last reviewed {formatDate(exam.lastReviewed)}.</p>
+      {footer}
     </article>
   );
 };
