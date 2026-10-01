@@ -1,10 +1,12 @@
 // EditingHub — what "Edit / Review tools" opens: supervisor sign-in and the
 // editing links. Kept off the homepage so lookups stay the main job.
+import { useState } from 'react';
 import { useEditing } from './context';
 import { ATTENTION_HREF, DRAFTS_HREF, SIGN_IN_HREF, SUPERVISORS_HREF, newExamHref } from './routes';
 
 export default function EditingHub() {
   const { backend, user, canEdit, canManage, checked, conflicts } = useEditing();
+  const [confirmReset, setConfirmReset] = useState(false);
   if (!backend) return null;
   return (
     <section className="notice-panel" aria-labelledby="hub-title">
@@ -32,13 +34,17 @@ export default function EditingHub() {
       {backend.mode === 'preview' && (
         <p className="muted hub-preview-note">
           Preview: edits are saved only in this browser and use made-up data.{' '}
-          <button
-            type="button"
-            className="link-button"
-            onClick={() => { if (window.confirm('Put the sample data back and erase every change made in this browser?')) backend.resetPreview(); }}
-          >
-            Reset the preview
-          </button>
+          {confirmReset ? (
+            <>
+              This erases every change made in this browser.{' '}
+              <button type="button" className="link-button" onClick={() => { backend.resetPreview(); setConfirmReset(false); }}>
+                Yes, reset
+              </button>{' '}
+              <button type="button" className="link-button" onClick={() => setConfirmReset(false)}>Cancel</button>
+            </>
+          ) : (
+            <button type="button" className="link-button" onClick={() => setConfirmReset(true)}>Reset the preview</button>
+          )}
         </p>
       )}
     </section>

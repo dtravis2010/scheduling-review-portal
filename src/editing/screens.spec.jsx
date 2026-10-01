@@ -1,6 +1,6 @@
 // Screen tests: the editing pages with the preview backend (in-memory, no
 // Firebase), driven the way a supervisor would use them.
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { EditingProvider } from './EditingContext';
@@ -94,6 +94,18 @@ describe('editing screens', () => {
     await user.type(screen.getByLabelText('Why is this correct as it is?'), 'MAKO uses the dedicated scanner');
     await user.click(screen.getByRole('button', { name: 'Mark as intended' }));
     expect(await screen.findByText('Nothing needs attention right now.')).toBeInTheDocument();
+  });
+
+  it('discards a draft only after a second, on-page confirmation', async () => {
+    const user = userEvent.setup();
+    await backend.signInAs('u-blake');
+    show('#edit/mri-brain');
+    await user.type(await screen.findByLabelText('Search words'), '{Control>}{End}{/Control}{Enter}mr head');
+    await user.click(screen.getByRole('button', { name: 'Discard draft' }));
+    expect(await backend.store.getDraft('mri-brain', 'u-blake')).not.toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Yes, discard my draft' }));
+    await vi.waitFor(async () => expect(await backend.store.getDraft('mri-brain', 'u-blake')).toBeNull());
+    expect((await backend.store.getExam('mri-brain')).aliases).not.toContain('mr head');
   });
 
   it('lets only list managers add supervisors', async () => {

@@ -223,8 +223,10 @@ export default function EditExamPage({ examId }) {
     });
   };
 
+  // Two-step discard on the page itself (browser confirm dialogs are not
+  // available everywhere this runs).
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
   const discard = async () => {
-    if (!window.confirm('Discard your draft? The published version is not affected.')) return;
     await service.discardDraft(user, examId);
     window.location.hash = draft?.isNew ? '#find' : examHref(examId);
   };
@@ -385,8 +387,17 @@ export default function EditExamPage({ examId }) {
 
           <div className="action-row action-row--sticky">
             <button type="submit" className="button-primary">Preview and publish</button>
-            <button type="button" className="button-secondary" onClick={discard}>Discard draft</button>
-            <span className="save-state" role="status" aria-live="polite">{saveState}</span>
+            {confirmDiscard ? (
+              <>
+                <button type="button" className="button-danger" onClick={discard}>Yes, discard my draft</button>
+                <button type="button" className="button-secondary" onClick={() => setConfirmDiscard(false)}>Keep editing</button>
+              </>
+            ) : (
+              <button type="button" className="button-secondary" onClick={() => setConfirmDiscard(true)}>Discard draft</button>
+            )}
+            <span className="save-state" role="status" aria-live="polite">
+              {confirmDiscard ? 'Discarding removes your changes. The published version stays as it is.' : saveState}
+            </span>
           </div>
         </form>
       )}

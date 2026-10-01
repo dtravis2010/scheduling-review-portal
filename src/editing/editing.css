@@ -521,3 +521,22 @@
     display: none;
   }
 }
+
+.button-danger {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+  padding: 0.5rem 1.1rem;
+  border-radius: 0.5rem;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  background: #b91c1c;
+  color: #fff;
+  border: 1px solid #b91c1c;
+}
+
+.button-danger:focus-visible {
+  outline: 3px solid #93c5fd;
+  outline-offset: 2px;
+}
