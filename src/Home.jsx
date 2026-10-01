@@ -13,7 +13,7 @@ import './lookup/lookup.css';
 const ReviewTools =
   import.meta.env.VITE_DATA_MODE === 'live' ? lazy(() => import('./App.jsx')) : null;
 
-const REVIEW_HASH = '#/review';
+const REVIEW_HASH = '#review';
 
 const useHashRoute = () => {
   const [hash, setHash] = useState(() => window.location.hash);
@@ -26,7 +26,7 @@ const useHashRoute = () => {
 };
 
 const BackLink = () => (
-  <a className="secondary-link" href="#/">
+  <a className="secondary-link" href="#find">
     ← Back to Find an exam
   </a>
 );

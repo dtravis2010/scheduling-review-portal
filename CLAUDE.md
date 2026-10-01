@@ -26,7 +26,7 @@ npm run deploy     # Build + deploy to GitHub Pages
 
 ```
 src/
-├── Home.jsx        # Entry view: Find an exam; #/review opens Edit / Review (live builds only)
+├── Home.jsx        # Entry view: Find an exam; #review opens Edit / Review (live builds only)
 ├── lookup/         # Find an exam: search.js (ranking + protocol rule), sampleExams.js (fictional data), UI
 ├── App.jsx         # Edit / Review tools — filtering, modality selection, upload, CSV export
 ├── App.css         # Dark theme with glassmorphism styling
