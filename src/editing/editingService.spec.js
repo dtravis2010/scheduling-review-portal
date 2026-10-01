@@ -2,7 +2,10 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { createMemoryStore } from './memoryStore';
 import { createEditingService } from './editingService';
 import { findConflicts } from './conflicts';
-import { AVERY, BLAKE, FORMER, VIEWER, EXAMS, SUPERVISORS } from './test/fixtures';
+import { AVERY, BLAKE, FORMER, VIEWER, EXAMS, SUPERVISORS, FACILITIES } from './test/fixtures';
+import { SAMPLE_EXAMS, FACILITIES as SAMPLE_FACILITIES } from '../lookup/sampleExams';
+import { validateExam } from './validation';
+import { searchExams } from '../lookup/search';
 
 const NOTE = 'Updated per imaging manager email';
 
@@ -13,7 +16,7 @@ let clock;
 beforeEach(() => {
   store = createMemoryStore({ exams: EXAMS, supervisors: SUPERVISORS });
   clock = 0;
-  svc = createEditingService(store, { now: () => `2026-10-01T10:00:${String(clock++).padStart(2, '0')}Z` });
+  svc = createEditingService(store, { facilities: FACILITIES, now: () => `2026-10-01T10:00:${String(clock++).padStart(2, '0')}Z` });
 });
 
 const expectCode = async (promise, code) => {
@@ -37,10 +40,10 @@ describe('permissions', () => {
 
   it('blocks a supervisor who loses access mid-draft from publishing', async () => {
     await svc.startDraft(BLAKE, 'mri-brain');
-    await svc.saveDraft(BLAKE, 'mri-brain', { scheduling: 'Schedule 60 minutes.' });
+    await svc.saveDraft(BLAKE, 'mri-brain', { scheduling: ['Schedule 60 minutes.'] });
     await svc.saveSupervisor(AVERY, { email: BLAKE.email, name: 'Blake Sup', active: false });
     await expectCode(svc.publish(BLAKE, 'mri-brain', NOTE), 'not-supervisor');
-    expect((await store.getExam('mri-brain')).scheduling).toMatch(/45 minutes/);
+    expect((await store.getExam('mri-brain')).scheduling[0]).toMatch(/45 minutes/);
   });
 
   it('only list managers can add supervisors, and cannot lock themselves out', async () => {
@@ -55,12 +58,12 @@ describe('permissions', () => {
 describe('drafts and publishing', () => {
   it('keeps drafts out of live lookups until published', async () => {
     await svc.startDraft(AVERY, 'mri-brain');
-    await svc.saveDraft(AVERY, 'mri-brain', { scheduling: 'Schedule 60 minutes.' });
-    expect((await store.getExam('mri-brain')).scheduling).toMatch(/45 minutes/);
+    await svc.saveDraft(AVERY, 'mri-brain', { scheduling: ['Schedule 60 minutes.'] });
+    expect((await store.getExam('mri-brain')).scheduling[0]).toMatch(/45 minutes/);
     expect(await svc.getDraft(BLAKE, 'mri-brain')).toBeNull();
 
     const { exam, version } = await svc.publish(AVERY, 'mri-brain', NOTE);
-    expect(exam.scheduling).toBe('Schedule 60 minutes.');
+    expect(exam.scheduling).toEqual(['Schedule 60 minutes.']);
     expect(exam.version).toBe(2);
     expect(version.publishedBy).toMatchObject({ uid: 'u-avery', name: 'Avery Lead' });
     expect(await svc.getDraft(AVERY, 'mri-brain')).toBeNull();
@@ -84,11 +87,11 @@ describe('drafts and publishing', () => {
   it('preview lists what changed and whether it affects search or guidance', async () => {
     await svc.startDraft(AVERY, 'mri-brain');
     await svc.saveDraft(AVERY, 'mri-brain', {
-      aliases: ['brain MRI', 'head MRI', 'MRI head'],
+      aliases: ['brain mri', 'head mri', 'MRI head'],
       facilities: [
-        { code: 'NORTH', status: 'yes', note: '' },
-        { code: 'SOUTH', status: 'no', note: '' },
-        { code: 'EAST', status: 'yes', note: '' },
+        { facilityId: 'NORTH', availability: 'yes', note: '' },
+        { facilityId: 'SOUTH', availability: 'no', note: '' },
+        { facilityId: 'EAST', availability: 'yes', note: '' },
       ],
     });
     const p = await svc.previewDraft(AVERY, 'mri-brain');
@@ -96,24 +99,25 @@ describe('drafts and publishing', () => {
     expect(p.affects).toEqual(['guidance', 'search']);
     expect(p.changes.find((c) => c.field === 'aliases').details).toEqual(['Added "MRI head"']);
     expect(p.changes.find((c) => c.field === 'facilities').details).toEqual([
-      'SOUTH: Performs with limits → Does not perform',
-      'SOUTH note removed',
+      'South Hospital: Limited → Not offered',
+      'South Hospital note removed',
     ]);
   });
 
   it('creates a new special protocol under a parent exam', async () => {
     const d = await svc.startNewExamDraft(AVERY, { name: 'CT Lower Extremity Runoff', kind: 'protocol', parentId: 'ct-lower-extremity' });
     expect(d.content.category).toBe('CT');
-    expect(d.content.facilities.map((f) => f.status)).toEqual(['', '', '']);
+    expect(d.content.facilities.map((f) => f.availability)).toEqual(['', '', '']);
     let err = await svc.publish(AVERY, d.examId, NOTE).catch((e) => e);
     expect(err.errors.some((e) => e.field === 'facilities')).toBe(true);
 
     await svc.saveDraft(AVERY, d.examId, {
-      scheduling: 'Schedule 40 minutes.',
+      aliases: ['ct runoff'],
+      scheduling: ['Schedule 40 minutes.'],
       facilities: [
-        { code: 'NORTH', status: 'yes', note: '' },
-        { code: 'SOUTH', status: 'no', note: '' },
-        { code: 'EAST', status: 'no', note: '' },
+        { facilityId: 'NORTH', availability: 'yes', note: '' },
+        { facilityId: 'SOUTH', availability: 'no', note: '' },
+        { facilityId: 'EAST', availability: 'no', note: '' },
       ],
     });
     const { exam } = await svc.publish(AVERY, d.examId, NOTE);
@@ -151,13 +155,43 @@ describe('protocol vs orderable separation', () => {
   });
 });
 
+describe('published edits reach the lookup, drafts do not', () => {
+  it('search finds a new protocol word only after publishing, and generic wording still skips MAKO', async () => {
+    await svc.startDraft(AVERY, 'ct-mako');
+    await svc.saveDraft(AVERY, 'ct-mako', { aliases: ['mako', 'mako knee', 'robotic knee planning'] });
+    const find = async (q) => searchExams(await store.listExams(), { query: q }).results.map((r) => r.exam.id);
+    expect(await find('robotic knee')).toEqual([]);
+    await svc.publish(AVERY, 'ct-mako', NOTE);
+    expect(await find('robotic knee')).toEqual(['ct-mako']);
+    expect(await find('CT lower extremity')).toEqual(['ct-lower-extremity']);
+    expect(await find('CT LOWER EXTREMITY WO CONTRAST')).toEqual(['ct-lower-extremity']);
+  });
+
+  it('blocks publishing a protocol that search could never tell apart from its parent', async () => {
+    await svc.startDraft(AVERY, 'ct-mako');
+    await svc.saveDraft(AVERY, 'ct-mako', { name: 'CT Leg Knee', aliases: [] });
+    const err = await svc.publish(AVERY, 'ct-mako', NOTE).catch((e) => e);
+    expect(err.errors).toEqual([{ field: 'aliases', message: expect.stringMatching(/can't tell this protocol apart from "CT Lower Extremity"/) }]);
+  });
+});
+
+describe('the lookup sample data', () => {
+  it('passes validation and has no conflict flags', () => {
+    const names = Object.fromEntries(SAMPLE_FACILITIES.map((f) => [f.id, f.name]));
+    for (const exam of SAMPLE_EXAMS) {
+      expect([exam.id, validateExam(exam, SAMPLE_EXAMS, { facilityNames: names })]).toEqual([exam.id, []]);
+    }
+    expect(findConflicts(SAMPLE_EXAMS, names)).toEqual([]);
+  });
+});
+
 describe('version history', () => {
   it('records who changed what, when, why, and what it affects', async () => {
     await svc.startDraft(AVERY, 'ct-lower-extremity');
-    await svc.saveDraft(AVERY, 'ct-lower-extremity', { scheduling: 'Schedule 35 minutes. No prep.' });
+    await svc.saveDraft(AVERY, 'ct-lower-extremity', { scheduling: ['Schedule 35 minutes.', 'No prep.'] });
     await svc.publish(AVERY, 'ct-lower-extremity', 'Room turnover is longer now');
     await svc.startDraft(BLAKE, 'ct-lower-extremity');
-    await svc.saveDraft(BLAKE, 'ct-lower-extremity', { aliases: ['CT leg', 'CT knee', 'CT ankle'] });
+    await svc.saveDraft(BLAKE, 'ct-lower-extremity', { aliases: ['ct leg', 'ct knee', 'ct ankle'] });
     await svc.publish(BLAKE, 'ct-lower-extremity', 'Front desk searches for ankle');
 
     const h = await svc.history('ct-lower-extremity');
@@ -173,10 +207,10 @@ describe('version history', () => {
 
   it('restores an earlier version as a new version without erasing history', async () => {
     await svc.startDraft(AVERY, 'mri-brain');
-    await svc.saveDraft(AVERY, 'mri-brain', { scheduling: 'Wrong text' });
+    await svc.saveDraft(AVERY, 'mri-brain', { scheduling: ['Wrong text'] });
     await svc.publish(AVERY, 'mri-brain', 'Typo introduced by mistake');
     const { exam, version } = await svc.restoreVersion(BLAKE, 'mri-brain', 1);
-    expect(exam.scheduling).toMatch(/45 minutes/);
+    expect(exam.scheduling[0]).toMatch(/45 minutes/);
     expect(exam.version).toBe(3);
     expect(version).toMatchObject({ restoredFrom: 1, changeNote: 'Restored version 1', publishedBy: { name: 'Blake Sup' } });
     expect((await svc.history('mri-brain')).length).toBe(3);
@@ -185,10 +219,10 @@ describe('version history', () => {
 
   it('will not restore a version that would now clash with another exam', async () => {
     await svc.startDraft(AVERY, 'mri-brain');
-    await svc.saveDraft(AVERY, 'mri-brain', { aliases: ['brain MRI'] });
+    await svc.saveDraft(AVERY, 'mri-brain', { aliases: ['brain mri'] });
     await svc.publish(AVERY, 'mri-brain', 'Removing head MRI wording');
     await svc.startDraft(AVERY, 'ct-lower-extremity');
-    await svc.saveDraft(AVERY, 'ct-lower-extremity', { aliases: ['CT leg', 'CT knee', 'head MRI'] });
+    await svc.saveDraft(AVERY, 'ct-lower-extremity', { aliases: ['ct leg', 'ct knee', 'head MRI'] });
     await svc.publish(AVERY, 'ct-lower-extremity', 'Deliberately odd test alias');
     const err = await svc.restoreVersion(AVERY, 'mri-brain', 1).catch((e) => e);
     expect(err.code).toBe('invalid');
@@ -200,8 +234,8 @@ describe('two supervisors editing the same exam', () => {
   it('stops a stale publish and merges the draft onto the latest version', async () => {
     await svc.startDraft(AVERY, 'mri-brain');
     await svc.startDraft(BLAKE, 'mri-brain');
-    await svc.saveDraft(AVERY, 'mri-brain', { scheduling: 'Schedule 60 minutes.' });
-    await svc.saveDraft(BLAKE, 'mri-brain', { aliases: ['brain MRI', 'head MRI', 'MRI head'], scheduling: 'Schedule 50 minutes.' });
+    await svc.saveDraft(AVERY, 'mri-brain', { scheduling: ['Schedule 60 minutes.'] });
+    await svc.saveDraft(BLAKE, 'mri-brain', { aliases: ['brain mri', 'head mri', 'MRI head'], scheduling: ['Schedule 50 minutes.'] });
     await svc.publish(AVERY, 'mri-brain', NOTE);
 
     const p = await svc.previewDraft(BLAKE, 'mri-brain');
@@ -217,13 +251,13 @@ describe('two supervisors editing the same exam', () => {
     await svc.publish(BLAKE, 'mri-brain', 'Added wording and longer slot');
     const exam = await store.getExam('mri-brain');
     expect(exam.aliases).toContain('MRI head');
-    expect(exam.scheduling).toBe('Schedule 50 minutes.');
+    expect(exam.scheduling).toEqual(['Schedule 50 minutes.']);
     expect(exam.version).toBe(3);
   });
 
   it('fails safely if the published version moves during the save', async () => {
     await svc.startDraft(AVERY, 'mri-brain');
-    await svc.saveDraft(AVERY, 'mri-brain', { scheduling: 'Schedule 60 minutes.' });
+    await svc.saveDraft(AVERY, 'mri-brain', { scheduling: ['Schedule 60 minutes.'] });
     const realCommit = store.commitPublish;
     store.commitPublish = async (args) => realCommit({ ...args, expectedVersion: args.expectedVersion + 99 });
     await expectCode(svc.publish(AVERY, 'mri-brain', NOTE), 'stale');
@@ -235,14 +269,16 @@ describe('two supervisors editing the same exam', () => {
 describe('conflict flags', () => {
   it('flags a protocol offered where its parent is not, and mismatched notes', async () => {
     const exams = await store.listExams();
-    exams.find((e) => e.id === 'ct-mako').facilities[2] = { code: 'EAST', status: 'yes', note: '' };
+    exams.find((e) => e.id === 'ct-mako').facilities[2] = { facilityId: 'EAST', availability: 'yes', note: '' };
     exams.find((e) => e.id === 'mri-brain').facilities[0].note = 'Does not perform on weekends anymore, not offered';
-    exams.find((e) => e.id === 'mri-brain').orderables.push('CT MAKO KNEE');
-    const c = findConflicts(exams);
+    exams.find((e) => e.id === 'mri-brain').orderables.push('CT LOWER EXTREMITY WO CONTRAST');
+    const c = findConflicts(exams, { EAST: 'East Imaging' });
     expect(c.map((x) => x.type).sort()).toEqual(['protocol-parent', 'shared-orderable', 'status-note']);
     expect(c.find((x) => x.type === 'protocol-parent').message).toBe(
-      'CT MAKO Protocol is marked "Performs" at EAST, but its parent exam CT Lower Extremity is marked "Does not perform" there.',
+      'CT MAKO Protocol is marked "Offered" at East Imaging, but its parent exam CT Lower Extremity is marked "Not offered" there.',
     );
+    // Flagged because MRI Brain is unrelated; MAKO sharing it with its parent alone is fine.
+    expect(c.find((x) => x.type === 'shared-orderable').examIds).toEqual(['ct-lower-extremity', 'ct-mako', 'mri-brain']);
   });
 
   it('has no flags on clean sample data', async () => {
@@ -253,9 +289,9 @@ describe('conflict flags', () => {
     await svc.startDraft(AVERY, 'ct-mako');
     await svc.saveDraft(AVERY, 'ct-mako', {
       facilities: [
-        { code: 'NORTH', status: 'yes', note: '' },
-        { code: 'SOUTH', status: 'no', note: '' },
-        { code: 'EAST', status: 'yes', note: '' },
+        { facilityId: 'NORTH', availability: 'yes', note: '' },
+        { facilityId: 'SOUTH', availability: 'no', note: '' },
+        { facilityId: 'EAST', availability: 'yes', note: '' },
       ],
     });
     await svc.publish(AVERY, 'ct-mako', 'EAST got the MAKO scanner');
@@ -274,11 +310,11 @@ describe('conflict flags', () => {
   it('brings the flag back when the values involved change', async () => {
     const exams = await store.listExams();
     const mri = exams.find((e) => e.id === 'mri-brain');
-    mri.facilities[0].note = 'Not offered';
+    mri.facilities[0].note = 'Not performed here';
     const [c] = findConflicts(exams);
     mri.acknowledged = { [c.key]: { reason: 'x' } };
     expect(findConflicts(exams)).toEqual([]);
-    mri.facilities[0].note = 'Not offered after 5pm';
+    mri.facilities[0].note = 'Not performed after 5pm';
     expect(findConflicts(exams)).toHaveLength(1);
   });
 });

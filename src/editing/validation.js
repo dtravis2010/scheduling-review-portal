@@ -3,6 +3,7 @@
 // to the field it belongs to. Nothing here blocks saving a draft.
 
 import { examContent } from './examFields';
+import { matchExam, tokenize } from '../lookup/search';
 
 export const MIN_CHANGE_NOTE = 10;
 
@@ -10,7 +11,7 @@ const norm = (s) => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
 
 // draft: the exam being published. others: every other published exam.
 // Returns [{ field, message }]; an empty list means it can be published.
-export function validateExam(draft, others = [], { changeNote } = {}) {
+export function validateExam(draft, others = [], { changeNote, facilityNames = {} } = {}) {
   const exam = examContent(draft);
   const errors = [];
   const add = (field, message) => errors.push({ field, message });
@@ -55,13 +56,24 @@ export function validateExam(draft, others = [], { changeNote } = {}) {
     }
   }
 
-  if (exam.facilities.length === 0) add('facilities', 'Add at least one facility and say whether it performs this exam.');
-  const missing = exam.facilities.filter((f) => !f.status).map((f) => f.code);
-  if (missing.length) add('facilities', `Choose Performs, Does not perform or Performs with limits for: ${missing.join(', ')}.`);
-  const limitedNoNote = exam.facilities.filter((f) => f.status === 'limited' && !f.note).map((f) => f.code);
+  // The lookup only shows a protocol when the search has a word that sets it
+  // apart from its parent. If none of its own words do, nobody can find it.
+  if (parent && !errors.some((e) => e.field === 'aliases' || e.field === 'name')) {
+    const byId = new Map([...rest, { ...exam, id: draft.id }].map((e) => [e.id, e]));
+    const findable = [exam.name, ...exam.aliases].some((w) => matchExam({ ...exam, id: draft.id }, tokenize(w), byId));
+    if (!findable) {
+      add('aliases', `Searches can't tell this protocol apart from "${parent.name}". Add a search word only this protocol uses (for example "MAKO").`);
+    }
+  }
+
+  const label = (id) => facilityNames[id] || id;
+  if (exam.facilities.length === 0) add('facilities', 'Add at least one facility and say whether it offers this exam.');
+  const missing = exam.facilities.filter((f) => !f.availability).map((f) => label(f.facilityId));
+  if (missing.length) add('facilities', `Choose Offered, Limited or Not offered for: ${missing.join(', ')}.`);
+  const limitedNoNote = exam.facilities.filter((f) => f.availability === 'limited' && !f.note).map((f) => label(f.facilityId));
   if (limitedNoNote.length) add('facilities', `Explain the limits in the note for: ${limitedNoNote.join(', ')}.`);
 
-  if (!exam.scheduling && !exam.clinicalReview) {
+  if (!exam.scheduling.length && !exam.clinicalReview.length) {
     add('scheduling', 'Add scheduling or clinical review guidance so people know what to do.');
   }
 

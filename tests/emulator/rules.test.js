@@ -12,11 +12,11 @@ afterAll(async () => { await env.cleanup(); });
 const by = (u) => ({ uid: u.uid, name: u.name, email: u.email.toLowerCase() });
 
 // The writes a publish makes: exam at version n and its version record.
-const publishBatch = (db, user, { examId = 'mri-brain', n = 2, author = user, examVersion = n, idVersion = n } = {}) => {
+const publishBatch = (db, user, { examId = 'mri-brain', n = 2, author = user, versionAuthor = author, examVersion = n, idVersion = n } = {}) => {
   const b = writeBatch(db);
   b.set(doc(db, 'exams', examId), { id: examId, name: 'MRI Brain', version: examVersion, updatedBy: by(author) });
   b.set(doc(db, 'examVersions', `${examId}__v${idVersion}`), {
-    examId, version: n, changeNote: 'Rules test publish', publishedBy: by(author),
+    examId, version: n, changeNote: 'Rules test publish', publishedBy: by(versionAuthor),
   });
   return b.commit();
 };
@@ -47,6 +47,7 @@ describe('publishing', () => {
 
   it("blocks naming someone else as the author", async () => {
     await assertFails(publishBatch(as(env, BLAKE), BLAKE, { author: AVERY }));
+    await assertFails(publishBatch(as(env, BLAKE), BLAKE, { versionAuthor: AVERY }));
   });
 
   it('blocks changing an exam without writing its version record', async () => {

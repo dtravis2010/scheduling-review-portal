@@ -1,3 +1,4 @@
+/* global process */
 // Shared emulator setup. The project id starts with "demo-", which Firebase
 // treats as offline-only, so these tests can never reach a real project.
 import { initializeTestEnvironment } from '@firebase/rules-unit-testing';

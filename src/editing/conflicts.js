@@ -13,7 +13,10 @@ const norm = (s) => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
 const SAYS_NOT_PERFORMED = /\b(does\s*n[o']t|do\s*not|not)\s+(perform|offer|do)|\bnot\s+(available|offered|performed)\b|\bno\s+longer\b/i;
 const SAYS_PERFORMED = /\b(performs|available|offered)\b/i;
 
-export function findConflicts(exams) {
+const label = (names, id) => names?.[id] || id;
+
+// facilityNames: { facilityId: 'Display name' } for readable messages.
+export function findConflicts(exams, facilityNames = {}) {
   const list = exams.filter((e) => e.active !== false).map((e) => ({ raw: e, id: e.id, ...examContent(e) }));
   const byId = Object.fromEntries(list.map((e) => [e.id, e]));
   const conflicts = [];
@@ -22,15 +25,15 @@ export function findConflicts(exams) {
     // Protocol offered somewhere its parent exam is not.
     if (exam.kind === 'protocol' && byId[exam.parentId]) {
       const parent = byId[exam.parentId];
-      const parentStatus = Object.fromEntries(parent.facilities.map((f) => [f.code, f.status]));
+      const parentStatus = Object.fromEntries(parent.facilities.map((f) => [f.facilityId, f.availability]));
       for (const f of exam.facilities) {
-        if ((f.status === 'yes' || f.status === 'limited') && parentStatus[f.code] === 'no') {
+        if ((f.availability === 'yes' || f.availability === 'limited') && parentStatus[f.facilityId] === 'no') {
           conflicts.push({
-            key: `protocol-parent:${exam.id}:${parent.id}:${f.code}`,
+            key: `protocol-parent:${exam.id}:${parent.id}:${f.facilityId}`,
             type: 'protocol-parent',
             examIds: [exam.id, parent.id],
-            facility: f.code,
-            message: `${exam.name} is marked "${FACILITY_STATUS_LABEL[f.status]}" at ${f.code}, but its parent exam ${parent.name} is marked "Does not perform" there.`,
+            facility: f.facilityId,
+            message: `${exam.name} is marked "${FACILITY_STATUS_LABEL[f.availability]}" at ${label(facilityNames, f.facilityId)}, but its parent exam ${parent.name} is marked "Not offered" there.`,
           });
         }
       }
@@ -41,35 +44,40 @@ export function findConflicts(exams) {
       if (!f.note) continue;
       const saysNo = SAYS_NOT_PERFORMED.test(f.note);
       const saysYes = !saysNo && SAYS_PERFORMED.test(f.note);
-      if ((f.status === 'yes' && saysNo) || (f.status === 'no' && saysYes)) {
+      if ((f.availability === 'yes' && saysNo) || (f.availability === 'no' && saysYes)) {
         conflicts.push({
-          key: `status-note:${exam.id}:${f.code}:${f.status}:${norm(f.note)}`,
+          key: `status-note:${exam.id}:${f.facilityId}:${f.availability}:${norm(f.note)}`,
           type: 'status-note',
           examIds: [exam.id],
-          facility: f.code,
-          message: `${exam.name} at ${f.code} is marked "${FACILITY_STATUS_LABEL[f.status]}", but the note says: "${f.note}".`,
+          facility: f.facilityId,
+          message: `${exam.name} at ${label(facilityNames, f.facilityId)} is marked "${FACILITY_STATUS_LABEL[f.availability]}", but the note says: "${f.note}".`,
         });
       }
     }
   }
 
-  // Two exams list the same Epic orderable, so transcription is ambiguous.
+  // Two unrelated exams list the same order name, so transcription is
+  // ambiguous. A protocol sharing its parent's order names is expected: that is
+  // how special protocols are ordered.
+  const family = (e) => (e.kind === 'protocol' && byId[e.parentId] ? e.parentId : e.id);
   const owners = new Map();
   for (const exam of list) {
     for (const o of exam.orderables) {
       const k = norm(o);
-      if (!owners.has(k)) owners.set(k, { label: o, ids: [] });
-      owners.get(k).ids.push(exam.id);
+      if (!owners.has(k)) owners.set(k, { text: o, ids: [], families: new Set() });
+      const entry = owners.get(k);
+      entry.ids.push(exam.id);
+      entry.families.add(family(exam));
     }
   }
-  for (const [k, { label, ids }] of owners) {
-    if (ids.length < 2) continue;
+  for (const [k, { text, ids, families }] of owners) {
+    if (families.size < 2) continue;
     const sorted = [...ids].sort();
     conflicts.push({
       key: `shared-orderable:${k}:${sorted.join(',')}`,
       type: 'shared-orderable',
       examIds: sorted,
-      message: `The orderable "${label}" is listed on more than one exam: ${sorted.map((id) => byId[id].name).join(' and ')}.`,
+      message: `The order name "${text}" is listed on more than one exam: ${sorted.map((id) => byId[id].name).join(' and ')}.`,
     });
   }
 

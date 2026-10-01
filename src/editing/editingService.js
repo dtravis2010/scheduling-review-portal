@@ -30,7 +30,11 @@ const who = (user) => ({ uid: user.uid, email: supervisorKey(user.email), name: 
 
 const slug = (s) => String(s || 'exam').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60) || 'exam';
 
-export function createEditingService(store, { now = () => new Date().toISOString() } = {}) {
+// facilities: [{ id, name }] — the facility list new exams start with, and
+// the names used in change descriptions and messages.
+export function createEditingService(store, { now = () => new Date().toISOString(), facilities = [] } = {}) {
+  const facilityNames = Object.fromEntries(facilities.map((f) => [f.id, f.name]));
+
   const getSupervisorFor = async (user) => {
     if (!user?.uid || !user?.email) return null;
     const s = await store.getSupervisor(supervisorKey(user.email));
@@ -50,7 +54,8 @@ export function createEditingService(store, { now = () => new Date().toISOString
     return draft;
   };
 
-  const namesById = (exams) => Object.fromEntries(exams.map((e) => [e.id, e.name]));
+  const namesById = (exams) => ({ ...facilityNames, ...Object.fromEntries(exams.map((e) => [e.id, e.name])) });
+  const check = (exam, exams, opts = {}) => validateExam(exam, exams, { ...opts, facilityNames });
 
   // Write a new published version. `content` is the full exam content.
   const commit = async (user, { examId, current, content, changeNote, extra = {}, allowNoChange = false }) => {
@@ -66,6 +71,9 @@ export function createEditingService(store, { now = () => new Date().toISOString
       ...examContent(content),
       id: examId,
       acknowledged: extra.acknowledged ?? current?.acknowledged ?? {},
+      // Shown on the lookup as "Guidance last reviewed". Marking a conflict as
+      // intended is not a review of the guidance, so it keeps the old date.
+      lastReviewed: extra.acknowledged ? current?.lastReviewed ?? at.slice(0, 10) : at.slice(0, 10),
       version,
       updatedAt: at,
       updatedBy: by,
@@ -134,7 +142,7 @@ export function createEditingService(store, { now = () => new Date().toISOString
       return draft;
     },
 
-    async startNewExamDraft(user, { name = '', kind = 'orderable', parentId = null } = {}) {
+    async startNewExamDraft(user, { name = '', kind = 'exam', parentId = null } = {}) {
       await requireSupervisor(user);
       const taken = new Set((await store.listExams()).map((e) => e.id));
       let examId = slug(name || (kind === 'protocol' ? 'new-protocol' : 'new-exam'));
@@ -145,7 +153,8 @@ export function createEditingService(store, { now = () => new Date().toISOString
         category: parent?.category || '',
         // A new protocol starts from its parent's facility list, so availability
         // differences are deliberate choices, not omissions.
-        facilities: (parent?.facilities || []).map((f) => ({ code: f.code, status: '', note: '' })),
+        facilities: (parent ? parent.facilities.map((f) => f.facilityId) : facilities.map((f) => f.id))
+          .map((facilityId) => ({ facilityId, availability: '', note: '' })),
       });
       const draft = { examId, owner: who(user), isNew: true, baseVersion: 0, base: null, content, updatedAt: now() };
       await store.saveDraft(draft);
@@ -182,7 +191,7 @@ export function createEditingService(store, { now = () => new Date().toISOString
       const exams = await store.listExams();
       const current = exams.find((e) => e.id === examId) || null;
       const changes = diffExam(current && draft.isNew ? null : current, draft.content, namesById(exams));
-      const errors = validateExam({ ...draft.content, id: examId }, exams);
+      const errors = check({ ...draft.content, id: examId }, exams);
       const stale = Boolean(current && current.version !== draft.baseVersion) || Boolean(draft.isNew && current);
       let newer = [];
       if (stale) newer = (await store.listVersions(examId)).filter((v) => v.version > draft.baseVersion);
@@ -224,7 +233,7 @@ export function createEditingService(store, { now = () => new Date().toISOString
         const newer = current ? (await store.listVersions(examId)).filter((v) => v.version > draft.baseVersion) : [];
         throw new EditingError('stale', 'Someone published a newer version of this exam after you started editing. Review their change, then update your draft to the latest before publishing.', { newer });
       }
-      const errors = validateExam({ ...draft.content, id: examId }, exams, { changeNote });
+      const errors = check({ ...draft.content, id: examId }, exams, { changeNote });
       if (errors.length) throw new EditingError('invalid', 'Some things need fixing before you can publish.', { errors });
       try {
         const result = await commit(user, { examId, current, content: draft.content, changeNote });
@@ -252,7 +261,7 @@ export function createEditingService(store, { now = () => new Date().toISOString
       const exams = await store.listExams();
       const current = exams.find((e) => e.id === examId) || null;
       const note = changeNote || `Restored version ${versionNumber}`;
-      const errors = validateExam({ ...target.snapshot, id: examId }, exams, { changeNote: note });
+      const errors = check({ ...target.snapshot, id: examId }, exams, { changeNote: note });
       if (errors.length) throw new EditingError('invalid', 'This version can\'t be restored as-is because it would clash with other exams. Edit the exam instead.', { errors });
       return commit(user, { examId, current, content: target.snapshot, changeNote: note, extra: { restoredFrom: versionNumber } });
     },

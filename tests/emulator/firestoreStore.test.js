@@ -19,21 +19,21 @@ describe('editing on Firestore (emulator)', () => {
   it('draft, preview, publish, history and restore', async () => {
     const avery = svcFor(AVERY);
     await avery.startDraft(AVERY, 'mri-brain');
-    await avery.saveDraft(AVERY, 'mri-brain', { scheduling: 'Schedule 60 minutes.' });
+    await avery.saveDraft(AVERY, 'mri-brain', { scheduling: ['Schedule 60 minutes.'] });
 
     const anon = createFirestoreStore(env.unauthenticatedContext().firestore());
-    expect((await anon.getExam('mri-brain')).scheduling).toMatch(/45 minutes/);
+    expect((await anon.getExam('mri-brain')).scheduling[0]).toMatch(/45 minutes/);
 
     const p = await avery.previewDraft(AVERY, 'mri-brain');
     expect(p.affects).toEqual(['guidance']);
     await avery.publish(AVERY, 'mri-brain', NOTE);
-    expect((await anon.getExam('mri-brain')).scheduling).toBe('Schedule 60 minutes.');
+    expect((await anon.getExam('mri-brain')).scheduling).toEqual(['Schedule 60 minutes.']);
 
     const blake = svcFor(BLAKE);
     await blake.restoreVersion(BLAKE, 'mri-brain', 1);
     const h = await anon.listVersions('mri-brain');
     expect(h.map((v) => [v.version, v.publishedBy.name])).toEqual([[3, 'Blake Sup'], [2, 'Avery Lead'], [1, 'Sample data']]);
-    expect((await anon.getExam('mri-brain')).scheduling).toMatch(/45 minutes/);
+    expect((await anon.getExam('mri-brain')).scheduling[0]).toMatch(/45 minutes/);
   });
 
   it("keeps drafts private and refuses edits from non-supervisors", async () => {
@@ -47,14 +47,14 @@ describe('editing on Firestore (emulator)', () => {
     const blake = svcFor(BLAKE);
     await avery.startDraft(AVERY, 'ct-mako');
     await blake.startDraft(BLAKE, 'ct-mako');
-    await avery.saveDraft(AVERY, 'ct-mako', { scheduling: 'Schedule 50 minutes.' });
-    await blake.saveDraft(BLAKE, 'ct-mako', { aliases: ['MAKO', 'MAKO knee', 'robotic knee CT'] });
+    await avery.saveDraft(AVERY, 'ct-mako', { scheduling: ['Schedule 50 minutes.'] });
+    await blake.saveDraft(BLAKE, 'ct-mako', { aliases: ['mako', 'mako knee', 'robotic knee CT'] });
     await avery.publish(AVERY, 'ct-mako', NOTE);
     await expect(blake.publish(BLAKE, 'ct-mako', NOTE)).rejects.toMatchObject({ code: 'stale' });
     await blake.updateDraftToLatest(BLAKE, 'ct-mako');
     await blake.publish(BLAKE, 'ct-mako', NOTE);
     const exam = await createFirestoreStore(as(env, VIEWER)).getExam('ct-mako');
-    expect(exam).toMatchObject({ version: 3, scheduling: 'Schedule 50 minutes.' });
+    expect(exam).toMatchObject({ version: 3, scheduling: ['Schedule 50 minutes.'] });
     expect(exam.aliases).toContain('robotic knee CT');
   });
 
@@ -63,9 +63,9 @@ describe('editing on Firestore (emulator)', () => {
     await avery.startDraft(AVERY, 'ct-mako');
     await avery.saveDraft(AVERY, 'ct-mako', {
       facilities: [
-        { code: 'NORTH', status: 'yes', note: '' },
-        { code: 'SOUTH', status: 'no', note: '' },
-        { code: 'EAST', status: 'yes', note: '' },
+        { facilityId: 'NORTH', availability: 'yes', note: '' },
+        { facilityId: 'SOUTH', availability: 'no', note: '' },
+        { facilityId: 'EAST', availability: 'yes', note: '' },
       ],
     });
     await avery.publish(AVERY, 'ct-mako', NOTE);
