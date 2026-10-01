@@ -1,0 +1,83 @@
+rules_version = '2';
+
+// Security rules for the supervisor editing flow (src/editing).
+//
+// Tested only against the local emulator (npm run test:emulator) with the
+// offline project id demo-scheduling-review. Do NOT deploy these to the
+// production project as-is: they deny every collection not listed here,
+// including the legacy review collections the current site uses.
+//
+// Summary:
+//   - anyone can read published exams and their history (lookups need no sign-in)
+//   - only an active supervisor with a verified email can publish
+//   - publishing writes the exam and its next version together; versions can
+//     never be changed or deleted, and must name the real signed-in author
+//   - drafts are private to their author
+//   - only supervisors who manage the list can change the supervisor list,
+//     and they cannot remove their own access
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null && request.auth.token.email_verified == true;
+    }
+    function myEmail() {
+      return request.auth.token.email.lower();
+    }
+    function supervisor() {
+      return get(/databases/$(database)/documents/supervisors/$(myEmail())).data;
+    }
+    function isSupervisor() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/supervisors/$(myEmail()))
+        && supervisor().active == true;
+    }
+    function isManager() {
+      return isSupervisor() && supervisor().canManageSupervisors == true;
+    }
+    function versionId(examId, n) {
+      return examId + '__v' + string(n);
+    }
+
+    match /exams/{examId} {
+      allow read: if true;
+      allow create, update: if isSupervisor()
+        && request.resource.data.id == examId
+        && request.resource.data.version == (resource == null ? 1 : resource.data.version + 1)
+        && request.resource.data.updatedBy.uid == request.auth.uid
+        && existsAfter(/databases/$(database)/documents/examVersions/$(versionId(examId, request.resource.data.version)));
+      allow delete: if false;
+    }
+
+    match /examVersions/{versionDocId} {
+      allow read: if true;
+      allow create: if isSupervisor()
+        && versionDocId == versionId(request.resource.data.examId, request.resource.data.version)
+        && request.resource.data.publishedBy.uid == request.auth.uid
+        && getAfter(/databases/$(database)/documents/exams/$(request.resource.data.examId)).data.version == request.resource.data.version;
+      allow update, delete: if false;
+    }
+
+    match /examDrafts/{draftId} {
+      allow read: if isSupervisor()
+        && (resource == null || resource.data.owner.uid == request.auth.uid);
+      allow create: if isSupervisor()
+        && request.resource.data.owner.uid == request.auth.uid
+        && draftId == request.resource.data.examId + '__' + request.auth.uid;
+      allow update: if isSupervisor()
+        && resource.data.owner.uid == request.auth.uid
+        && request.resource.data.owner.uid == request.auth.uid
+        && request.resource.data.examId == resource.data.examId;
+      allow delete: if isSupervisor() && resource.data.owner.uid == request.auth.uid;
+    }
+
+    match /supervisors/{email} {
+      allow read: if signedIn();
+      allow write: if isManager()
+        && (email != myEmail()
+            || (request.resource != null
+                && request.resource.data.active == true
+                && request.resource.data.canManageSupervisors == true));
+    }
+  }
+}

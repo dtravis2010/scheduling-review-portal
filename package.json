@@ -10,7 +10,8 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "node --test \"src/**/*.test.js\" && vitest run"
+    "test": "node --test \"src/**/*.test.js\" && vitest run",
+    "test:emulator": "npx -y firebase-tools@15 emulators:exec --only firestore --project demo-scheduling-review \"vitest run -c vitest.emulator.config.js\""
   },
   "dependencies": {
     "firebase": "^12.11.0",
