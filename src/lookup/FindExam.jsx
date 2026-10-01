@@ -1,12 +1,12 @@
 import { useId, useMemo, useRef, useState } from 'react';
 import { searchExams, availabilityAt } from './search';
-import { SAMPLE_EXAMS, FACILITIES, CATEGORIES } from './sampleExams';
+import { getPublishedExams, getFacilities, getCategories } from './examSource';
 import ExamDetail from './ExamDetail';
 import { AvailabilityBadge } from './Availability';
 
-// This milestone's lookup always runs on the fictional sample set. Swapping in
-// a real, approved dataset means replacing these three imports.
-const EXAMS = SAMPLE_EXAMS;
+const EXAMS = getPublishedExams();
+const FACILITIES = getFacilities();
+const CATEGORIES = getCategories();
 
 const MATCH_LABEL = {
   alias: 'Common wording',
