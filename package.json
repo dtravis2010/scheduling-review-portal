@@ -11,7 +11,8 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "node --test \"src/**/*.test.js\" && vitest run",
-    "test:emulator": "npx -y firebase-tools@15 emulators:exec --only firestore --project demo-scheduling-review \"vitest run -c vitest.emulator.config.js\""
+    "test:emulator": "npx -y firebase-tools@15 emulators:exec --only firestore --project demo-scheduling-review \"vitest run -c vitest.emulator.config.js\"",
+    "dev:emulator": "npx -y firebase-tools@15 emulators:exec --only auth,firestore --project demo-scheduling-review \"node scripts/seedEmulator.mjs && VITE_EDITING_BACKEND=emulator vite --port 5173 --strictPort\""
   },
   "dependencies": {
     "firebase": "^12.11.0",

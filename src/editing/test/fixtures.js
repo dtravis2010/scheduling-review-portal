@@ -1,10 +1,8 @@
 // Fictional exams, facilities and people for tests. Not THR data.
 
-export const SUPERVISORS = [
-  { email: 'avery.lead@example.org', name: 'Avery Lead', active: true, canManageSupervisors: true },
-  { email: 'blake.sup@example.org', name: 'Blake Sup', active: true, canManageSupervisors: false },
-  { email: 'former.sup@example.org', name: 'Former Sup', active: false, canManageSupervisors: false },
-];
+import { PREVIEW_SUPERVISORS } from '../previewPeople.js';
+
+export const SUPERVISORS = PREVIEW_SUPERVISORS;
 
 export const AVERY = { uid: 'u-avery', email: 'avery.lead@example.org', name: 'Avery Lead' };
 export const BLAKE = { uid: 'u-blake', email: 'Blake.Sup@example.org', name: 'Blake Sup' };
