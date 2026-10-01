@@ -3,8 +3,7 @@
 //
 // Ranking (higher wins): exam name, then alias (protocol matching wording),
 // then orderable (transcription name). A query matches a field when every word
-// typed appears in that one field (a word may be the start of a longer word,
-// so "extrem" finds "extremity").
+// typed appears in that one field (see wordMatches for partial words).
 //
 // Protocol safety rule: a special protocol (kind 'protocol') is only found when
 // the query contains at least one word that belongs to the protocol and NOT to
@@ -20,7 +19,11 @@ export const tokenize = (text) =>
     .split(/[^a-z0-9]+/)
     .filter((t) => t && !STOP_WORDS.has(t));
 
-const wordMatches = (queryWord, fieldWord) => fieldWord.startsWith(queryWord);
+// Words of 3+ letters also match the start of a longer word ("extrem" finds
+// "extremity"). Shorter ones ("p" in "a/p", "ct", "us") must match a whole
+// word, so a stray letter can't hit an unrelated exam or protocol.
+const wordMatches = (queryWord, fieldWord) =>
+  queryWord.length < 3 ? fieldWord === queryWord : fieldWord.startsWith(queryWord);
 
 const fieldMatches = (queryWords, fieldText) => {
   const fieldWords = tokenize(fieldText);
@@ -134,3 +137,10 @@ export const searchExams = (exams, { query = '', facilityId = '', category = '' 
 // supervisors know a separate set of rules exists).
 export const protocolsFor = (exams, examId) =>
   exams.filter((e) => e.kind === 'protocol' && e.parentId === examId);
+
+// Which exam the guidance panel shows. An exam the user picked (from the list,
+// or from a parent/protocol link) is looked up by id across ALL exams, so it
+// opens even when the current search doesn't include it. Otherwise the top
+// result shows.
+export const pickSelectedExam = (exams, selectedId, visibleMatches) =>
+  exams.find((e) => e.id === selectedId) || visibleMatches[0]?.exam || null;

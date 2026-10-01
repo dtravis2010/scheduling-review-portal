@@ -1,5 +1,5 @@
 import { useId, useMemo, useRef, useState } from 'react';
-import { searchExams, availabilityAt } from './search';
+import { searchExams, availabilityAt, pickSelectedExam } from './search';
 import { getPublishedExams, getFacilities, getCategories } from './examSource';
 import ExamDetail from './ExamDetail';
 import { AvailabilityBadge } from './Availability';
@@ -55,10 +55,8 @@ const FindExam = ({ reviewHref }) => {
   );
 
   const visible = showHidden ? [...results, ...notOfferedAtFacility] : results;
-  const selected =
-    EXAMS.find((e) => e.id === selectedId && visible.some((m) => m.exam.id === e.id)) ||
-    visible[0]?.exam ||
-    null;
+  // Changing the search or filters clears selectedId (top result shows again).
+  const selected = pickSelectedExam(EXAMS, selectedId, visible);
   const facilityName = FACILITIES.find((f) => f.id === facilityId)?.name;
 
   const openExam = (id) => {
@@ -73,6 +71,7 @@ const FindExam = ({ reviewHref }) => {
     setFacilityId('');
     setCategory('');
     setShowHidden(false);
+    setSelectedId('');
   };
 
   const hasFilters = query || facilityId || category;
@@ -106,7 +105,10 @@ const FindExam = ({ reviewHref }) => {
               className="search-input"
               placeholder="For example: CT knee, MAKO, DVT study, mammo"
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setSelectedId('');
+              }}
               aria-describedby={ids.count}
               autoComplete="off"
               autoFocus
@@ -121,6 +123,7 @@ const FindExam = ({ reviewHref }) => {
             onChange={(e) => {
               setFacilityId(e.target.value);
               setShowHidden(false);
+              setSelectedId('');
             }}
           >
             <option value="">All facilities</option>
@@ -133,7 +136,10 @@ const FindExam = ({ reviewHref }) => {
         </div>
         <div className="field">
           <label htmlFor={ids.category}>Exam type</label>
-          <select id={ids.category} value={category} onChange={(e) => setCategory(e.target.value)}>
+          <select id={ids.category} value={category} onChange={(e) => {
+              setCategory(e.target.value);
+              setSelectedId('');
+            }}>
             <option value="">All exam types</option>
             {CATEGORIES.map((c) => (
               <option key={c} value={c}>

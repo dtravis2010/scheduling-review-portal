@@ -1,7 +1,7 @@
 // Run with `npm test` (Node's built-in test runner, no extra packages).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { searchExams, protocolsFor, tokenize } from './search.js';
+import { searchExams, protocolsFor, tokenize, pickSelectedExam } from './search.js';
 import { SAMPLE_EXAMS, FACILITIES, CATEGORIES } from './sampleExams.js';
 
 const ids = (query, opts = {}) =>
@@ -125,4 +125,25 @@ test('sample data is well-formed', () => {
     for (const f of e.facilities) assert.ok(['yes', 'no', 'limited'].includes(f.availability));
     if (e.kind === 'protocol') assert.ok(examIds.has(e.parentId), `${e.id} parent exists`);
   }
+});
+
+test('regression: "ct a/p" finds CT Abdomen and Pelvis only, not MAKO', () => {
+  assert.deepEqual(ids('ct a/p'), ['ct-abdomen-pelvis']);
+  // One- and two-letter words must match a whole word, never the start of one.
+  for (const q of ['ct p', 'ct k', 'ct h', 'ct m', 'ct ma']) {
+    assert.ok(!ids(q).includes('ct-mako'), `${q} must not match MAKO`);
+  }
+  assert.equal(ids('ct mak')[0], 'ct-mako', 'three letters still work as a prefix');
+});
+
+test('regression: opening a protocol link after a search opens that protocol', () => {
+  // Searching "knee" shows MRI Knee and CT Lower Extremity, but not MAKO.
+  const { results } = searchExams(SAMPLE_EXAMS, { query: 'knee' });
+  assert.ok(!results.some((r) => r.exam.id === 'ct-mako'));
+  // Clicking the MAKO link on CT Lower Extremity must open MAKO, not a result by position.
+  assert.equal(pickSelectedExam(SAMPLE_EXAMS, 'ct-mako', results).id, 'ct-mako');
+  assert.equal(pickSelectedExam(SAMPLE_EXAMS, 'ct-lower-extremity', []).id, 'ct-lower-extremity');
+  // Nothing picked: top result.
+  assert.equal(pickSelectedExam(SAMPLE_EXAMS, '', results).id, results[0].exam.id);
+  assert.equal(pickSelectedExam(SAMPLE_EXAMS, '', []), null);
 });
