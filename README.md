@@ -1,16 +1,31 @@
-# React + Vite
+# Scheduling Review Portal
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Lookup-first site for Enterprise Scheduling and Clinical Review exam guidance.
+The homepage is **Find an exam**: search by exam name, common wording or order
+name, filter by facility and exam type, and see scheduling guidance, clinical
+review guidance and facility availability.
 
-Currently, two official plugins are available:
+## Data modes
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+| Build | Command | What it includes |
+| --- | --- | --- |
+| Sample (default) | `npm run build` | Find an exam on fictional sample data (`src/lookup/sampleExams.js`). No Firebase code is bundled, so it cannot read or write the live database. Edit / Review shows an "off in this preview" notice. |
+| Live | `VITE_DATA_MODE=live npm run build` | Same homepage, plus the existing Edit / Review tools (`src/App.jsx`) behind the **Edit / Review tools** link. These read and write live Firestore. |
 
-## React Compiler
+## Search rules
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- Ranking: exam name, then common wording (aliases), then order names.
+- Aliases (protocol matching wording) are stored separately from orderables
+  (transcription / order names).
+- A special protocol (for example MAKO) is only found by wording that belongs to
+  the protocol and not to its parent exam. "CT lower extremity" finds CT Lower
+  Extremity, never MAKO. Protocol order names are never searched.
 
-## Expanding the ESLint configuration
+## Commands
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+```bash
+npm run dev     # dev server
+npm test        # search tests + a check that the sample build has no Firebase
+npm run lint
+npm run build
+```
