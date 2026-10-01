@@ -327,6 +327,7 @@ export default function EditExamPage({ examId }) {
                 <input type="radio" name="kind" checked={form.kind === 'protocol'} onChange={() => update({ kind: 'protocol' })} />
                 Special protocol (ordered under another exam, with its own rules)
               </label>
+              <FieldErrors errors={errors} field="kind" />
             </fieldset>
             {form.kind === 'protocol' && (
               <div className="field">

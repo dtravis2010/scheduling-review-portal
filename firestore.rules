@@ -11,8 +11,10 @@ rules_version = '2';
 //   - anyone can read published exams and their history (lookups need no sign-in)
 //   - only an active supervisor with a verified email can publish
 //   - publishing writes the exam and its next version together; versions can
-//     never be changed or deleted, and must name the real signed-in author
+//     never be changed or deleted, must name the real signed-in author (uid,
+//     email and supervisor-list name) and must match what went live
 //   - drafts are private to their author
+//   - only supervisors can read the supervisor list (others only their own entry)
 //   - only supervisors who manage the list can change the supervisor list,
 //     and they cannot remove their own access
 service cloud.firestore {
@@ -35,6 +37,21 @@ service cloud.firestore {
     function isManager() {
       return isSupervisor() && supervisor().canManageSupervisors == true;
     }
+    // The author recorded in History must be the signed-in supervisor, with
+    // the name and email from the supervisor list.
+    function isMe(person) {
+      return person.uid == request.auth.uid
+        && person.email == myEmail()
+        && person.name == supervisor().name;
+    }
+    // History's copy must match what went live, field by field.
+    function sameContent(snap, live) {
+      return live.version == request.resource.data.version
+        && snap.name == live.name && snap.kind == live.kind && snap.parentId == live.parentId
+        && snap.category == live.category && snap.aliases == live.aliases && snap.active == live.active
+        && snap.orderables == live.orderables && snap.scheduling == live.scheduling
+        && snap.clinicalReview == live.clinicalReview && snap.facilities == live.facilities;
+    }
     function versionId(examId, n) {
       return examId + '__v' + string(n);
     }
@@ -44,7 +61,7 @@ service cloud.firestore {
       allow create, update: if isSupervisor()
         && request.resource.data.id == examId
         && request.resource.data.version == (resource == null ? 1 : resource.data.version + 1)
-        && request.resource.data.updatedBy.uid == request.auth.uid
+        && isMe(request.resource.data.updatedBy)
         && existsAfter(/databases/$(database)/documents/examVersions/$(versionId(examId, request.resource.data.version)));
       allow delete: if false;
     }
@@ -53,8 +70,9 @@ service cloud.firestore {
       allow read: if true;
       allow create: if isSupervisor()
         && versionDocId == versionId(request.resource.data.examId, request.resource.data.version)
-        && request.resource.data.publishedBy.uid == request.auth.uid
-        && getAfter(/databases/$(database)/documents/exams/$(request.resource.data.examId)).data.version == request.resource.data.version;
+        && isMe(request.resource.data.publishedBy)
+        && sameContent(request.resource.data.snapshot,
+             getAfter(/databases/$(database)/documents/exams/$(request.resource.data.examId)).data);
       allow update, delete: if false;
     }
 
@@ -72,7 +90,8 @@ service cloud.firestore {
     }
 
     match /supervisors/{email} {
-      allow read: if signedIn();
+      // Anyone signed in may check their own entry; only supervisors see the list.
+      allow read: if signedIn() && (email == myEmail() || isSupervisor());
       allow write: if isManager()
         && (email != myEmail()
             || (request.resource != null

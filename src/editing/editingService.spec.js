@@ -185,6 +185,63 @@ describe('the lookup sample data', () => {
   });
 });
 
+describe('switching a special protocol to a regular exam', () => {
+  const find = async (q) => searchExams(await store.listExams(), { query: q }).results.map((r) => r.exam.id);
+
+  it("is blocked while it would show up in the parent exam's searches", async () => {
+    await svc.startDraft(AVERY, 'ct-mako');
+    await svc.saveDraft(AVERY, 'ct-mako', { kind: 'exam', parentId: null });
+    const err = await svc.publish(AVERY, 'ct-mako', NOTE).catch((e) => e);
+    expect(err.code).toBe('invalid');
+    expect(err.errors).toEqual(expect.arrayContaining([
+      { field: 'orderables', message: expect.stringMatching(/"CT LOWER EXTREMITY WO CONTRAST" is the order name for "CT Lower Extremity"\. As a regular exam/) },
+      { field: 'kind', message: expect.stringMatching(/searches meant for "CT Lower Extremity" would also show this one/) },
+    ]));
+    expect(await find('ct lower extremity')).toEqual(['ct-lower-extremity']);
+  });
+
+  it('is allowed once it no longer shares the parent\'s order names or wording', async () => {
+    await svc.startDraft(AVERY, 'ct-mako');
+    await svc.saveDraft(AVERY, 'ct-mako', { kind: 'exam', parentId: null, name: 'MAKO Robotic Planning Scan', orderables: ['CT MAKO PLANNING'] });
+    await svc.publish(AVERY, 'ct-mako', 'MAKO now has its own orderable');
+    expect(await find('ct lower extremity')).toEqual(['ct-lower-extremity']);
+    expect(await find('ct knee')).toEqual(['ct-lower-extremity']);
+    expect(await find('mako')).toEqual(['ct-mako']);
+  });
+
+  it('blocks two regular exams from sharing an order name', async () => {
+    await svc.startDraft(AVERY, 'mri-brain');
+    await svc.saveDraft(AVERY, 'mri-brain', { orderables: ['MRI BRAIN WO CONTRAST', 'CT LOWER EXTREMITY W CONTRAST'] });
+    const err = await svc.publish(AVERY, 'mri-brain', NOTE).catch((e) => e);
+    expect(err.errors).toEqual([{ field: 'orderables', message: '"CT LOWER EXTREMITY W CONTRAST" is already an order name for "CT Lower Extremity". Searches for that order would show both exams. Remove it from one of them.' }]);
+  });
+});
+
+describe('what a change affects', () => {
+  it("tags a regular exam's order names as changing search results", async () => {
+    await svc.startDraft(AVERY, 'mri-brain');
+    await svc.saveDraft(AVERY, 'mri-brain', { orderables: ['MRI BRAIN WO CONTRAST', 'MRI BRAIN PERFUSION'] });
+    const p = await svc.previewDraft(AVERY, 'mri-brain');
+    expect(p.changes).toEqual([expect.objectContaining({ field: 'orderables', affects: 'search' })]);
+    await svc.publish(AVERY, 'mri-brain', NOTE);
+    expect(searchExams(await store.listExams(), { query: 'brain perfusion' }).results.map((r) => r.exam.id)).toEqual(['mri-brain']);
+  });
+
+  it("tags a protocol's order names as guidance only, since search never uses them", async () => {
+    await svc.startDraft(AVERY, 'ct-mako');
+    await svc.saveDraft(AVERY, 'ct-mako', { orderables: ['CT LOWER EXTREMITY WO CONTRAST', 'CT LOWER EXTREMITY W CONTRAST'] });
+    const p = await svc.previewDraft(AVERY, 'ct-mako');
+    expect(p.changes).toEqual([expect.objectContaining({ field: 'orderables', affects: 'guidance' })]);
+  });
+
+  it('records the name from the supervisor list in History', async () => {
+    await svc.startDraft(AVERY, 'mri-brain');
+    await svc.saveDraft(AVERY, 'mri-brain', { scheduling: ['Schedule 60 minutes.'] });
+    const { version } = await svc.publish({ ...AVERY, name: 'Someone Else' }, 'mri-brain', NOTE);
+    expect(version.publishedBy.name).toBe('Avery Lead');
+  });
+});
+
 describe('version history', () => {
   it('records who changed what, when, why, and what it affects', async () => {
     await svc.startDraft(AVERY, 'ct-lower-extremity');

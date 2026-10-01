@@ -24,7 +24,8 @@ const RestoreForm = ({ version, onRestore, onCancel }) => {
     <form className="restore-form edit-form" onSubmit={submit}>
       <div className="field">
         <label htmlFor={id}>Why restore this version?</label>
-        <textarea id={id} rows={2} value={note} onChange={(e) => setNote(e.target.value)} />
+        <p className="field-help" id={`${id}-help`}>Shown in History. At least {MIN_CHANGE_NOTE} characters.</p>
+        <textarea id={id} rows={2} value={note} onChange={(e) => setNote(e.target.value)} aria-describedby={`${id}-help`} />
       </div>
       <p className="muted">This makes version {version.version} live again right away. Nothing in history is erased.</p>
       {error && (

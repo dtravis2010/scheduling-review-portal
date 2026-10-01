@@ -22,7 +22,8 @@ export const EXAM_FIELDS = [
   { key: 'category', label: 'Category', affects: 'search' },
   { key: 'aliases', label: 'Search words (aliases)', affects: 'search' },
   { key: 'active', label: 'Shown in lookups', affects: 'search' },
-  { key: 'orderables', label: 'Epic orderables', affects: 'guidance' },
+  // Search uses a regular exam's order names; a protocol's are reference only.
+  { key: 'orderables', label: 'Order names', affects: 'search-if-exam' },
   { key: 'scheduling', label: 'Scheduling guidance', affects: 'guidance' },
   { key: 'clinicalReview', label: 'Clinical review guidance', affects: 'guidance' },
   { key: 'facilities', label: 'Facility availability', affects: 'guidance' },
@@ -146,7 +147,10 @@ export function diffExam(before, after, names = {}) {
     else if (key === 'scheduling' || key === 'clinicalReview') details = describeLines(was || [], now);
     else if (key === 'facilities') details = describeFacilities(was || [], now, names);
     else details = describeScalar(key, was, now, names);
-    changes.push({ field: key, label, affects, details });
+    const effect = affects === 'search-if-exam'
+      ? (a.kind === 'exam' || b?.kind === 'exam' ? 'search' : 'guidance')
+      : affects;
+    changes.push({ field: key, label, affects: effect, details });
   }
   return changes;
 }

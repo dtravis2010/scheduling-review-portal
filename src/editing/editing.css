@@ -37,13 +37,14 @@
 }
 
 .button-primary {
-  background: var(--accent);
+  /* --accent-hover keeps white text above 4.5:1 contrast. */
+  background: var(--accent-hover);
   color: #fff;
-  border: 1px solid var(--accent);
+  border: 1px solid var(--accent-hover);
 }
 
 .button-primary:hover {
-  background: var(--accent-hover);
+  background: #1d4ed8;
 }
 
 .button-primary:disabled {

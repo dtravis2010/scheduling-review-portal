@@ -59,6 +59,9 @@ export function createEditingService(store, { now = () => new Date().toISOString
 
   // Write a new published version. `content` is the full exam content.
   const commit = async (user, { examId, current, content, changeNote, extra = {}, allowNoChange = false }) => {
+    // History shows the name on the supervisor list, not whatever the sign-in
+    // provider reports (the security rules check the same thing).
+    const sup = await getSupervisorFor(user);
     const exams = await store.listExams();
     const changes = diffExam(current, content, namesById(exams));
     if (!changes.length && !allowNoChange) {
@@ -66,7 +69,7 @@ export function createEditingService(store, { now = () => new Date().toISOString
     }
     const version = (current?.version || 0) + 1;
     const at = now();
-    const by = who(user);
+    const by = { ...who(user), name: sup?.name || who(user).name };
     const exam = {
       ...examContent(content),
       id: examId,
@@ -191,7 +194,7 @@ export function createEditingService(store, { now = () => new Date().toISOString
       const exams = await store.listExams();
       const current = exams.find((e) => e.id === examId) || null;
       const changes = diffExam(current && draft.isNew ? null : current, draft.content, namesById(exams));
-      const errors = check({ ...draft.content, id: examId }, exams);
+      const errors = check({ ...draft.content, id: examId }, exams, { previous: draft.isNew ? null : current });
       const stale = Boolean(current && current.version !== draft.baseVersion) || Boolean(draft.isNew && current);
       let newer = [];
       if (stale) newer = (await store.listVersions(examId)).filter((v) => v.version > draft.baseVersion);
@@ -233,7 +236,7 @@ export function createEditingService(store, { now = () => new Date().toISOString
         const newer = current ? (await store.listVersions(examId)).filter((v) => v.version > draft.baseVersion) : [];
         throw new EditingError('stale', 'Someone published a newer version of this exam after you started editing. Review their change, then update your draft to the latest before publishing.', { newer });
       }
-      const errors = check({ ...draft.content, id: examId }, exams, { changeNote });
+      const errors = check({ ...draft.content, id: examId }, exams, { changeNote, previous: current });
       if (errors.length) throw new EditingError('invalid', 'Some things need fixing before you can publish.', { errors });
       try {
         const result = await commit(user, { examId, current, content: draft.content, changeNote });
@@ -261,7 +264,7 @@ export function createEditingService(store, { now = () => new Date().toISOString
       const exams = await store.listExams();
       const current = exams.find((e) => e.id === examId) || null;
       const note = changeNote || `Restored version ${versionNumber}`;
-      const errors = check({ ...target.snapshot, id: examId }, exams, { changeNote: note });
+      const errors = check({ ...target.snapshot, id: examId }, exams, { changeNote: note, previous: current });
       if (errors.length) throw new EditingError('invalid', 'This version can\'t be restored as-is because it would clash with other exams. Edit the exam instead.', { errors });
       return commit(user, { examId, current, content: target.snapshot, changeNote: note, extra: { restoredFrom: versionNumber } });
     },

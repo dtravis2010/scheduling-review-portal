@@ -10,8 +10,9 @@ export const MIN_CHANGE_NOTE = 10;
 const norm = (s) => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
 
 // draft: the exam being published. others: every other published exam.
+// previous: the published version this draft replaces (null for a new exam).
 // Returns [{ field, message }]; an empty list means it can be published.
-export function validateExam(draft, others = [], { changeNote, facilityNames = {} } = {}) {
+export function validateExam(draft, others = [], { changeNote, facilityNames = {}, previous = null } = {}) {
   const exam = examContent(draft);
   const errors = [];
   const add = (field, message) => errors.push({ field, message });
@@ -63,6 +64,36 @@ export function validateExam(draft, others = [], { changeNote, facilityNames = {
     const findable = [exam.name, ...exam.aliases].some((w) => matchExam({ ...exam, id: draft.id }, tokenize(w), byId));
     if (!findable) {
       add('aliases', `Searches can't tell this protocol apart from "${parent.name}". Add a search word only this protocol uses (for example "MAKO").`);
+    }
+  }
+
+  // A regular exam is found by its order names, so each order name belongs to
+  // one regular exam. Only a special protocol may share its parent's.
+  const formerParent = previous?.kind === 'protocol' && exam.kind === 'exam'
+    ? rest.find((o) => o.id === previous.parentId) || null
+    : null;
+  if (exam.kind === 'exam') {
+    for (const o of exam.orderables) {
+      const owner = rest.find(
+        (x) => x.orderables.some((y) => norm(y) === norm(o)) && !(x.kind === 'protocol' && x.parentId === draft.id),
+      );
+      if (!owner) continue;
+      add('orderables', owner.id === formerParent?.id
+        ? `"${o}" is the order name for "${owner.name}". As a regular exam, every search for that order would also show this exam. Remove it, or keep this a special protocol.`
+        : `"${o}" is already an order name for "${owner.name}". Searches for that order would show both exams. Remove it from one of them.`);
+    }
+  }
+
+  // Turning a special protocol into a regular exam must not let the parent's
+  // everyday searches start landing on it (for example "ct lower extremity"
+  // showing MAKO).
+  if (formerParent) {
+    const self = { ...exam, id: draft.id };
+    const byId = new Map([...rest, self].map((e) => [e.id, e]));
+    const hijacked = [formerParent.name, ...formerParent.aliases]
+      .filter((w) => matchExam(self, tokenize(w), byId));
+    if (hijacked.length) {
+      add('kind', `As a regular exam, searches meant for "${formerParent.name}" would also show this one (${hijacked.map((w) => `"${w}"`).join(', ')}). Keep it a special protocol, or rename it and remove the search words it shares with "${formerParent.name}".`);
     }
   }
 

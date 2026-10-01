@@ -12,11 +12,19 @@ afterAll(async () => { await env.cleanup(); });
 const by = (u) => ({ uid: u.uid, name: u.name, email: u.email.toLowerCase() });
 
 // The writes a publish makes: exam at version n and its version record.
-const publishBatch = (db, user, { examId = 'mri-brain', n = 2, author = user, versionAuthor = author, examVersion = n, idVersion = n } = {}) => {
+const CONTENT = {
+  name: 'MRI Brain', kind: 'exam', parentId: null, category: 'MRI', aliases: ['brain mri'], active: true,
+  orderables: ['MRI BRAIN WO CONTRAST'], scheduling: ['Schedule 45 minutes.'], clinicalReview: [],
+  facilities: [{ facilityId: 'NORTH', availability: 'yes', note: '' }],
+};
+const publishBatch = (db, user, {
+  examId = 'mri-brain', n = 2, author = by(user), versionAuthor = author, examVersion = n, idVersion = n,
+  snapshot = CONTENT,
+} = {}) => {
   const b = writeBatch(db);
-  b.set(doc(db, 'exams', examId), { id: examId, name: 'MRI Brain', version: examVersion, updatedBy: by(author) });
+  b.set(doc(db, 'exams', examId), { ...CONTENT, id: examId, version: examVersion, updatedBy: author });
   b.set(doc(db, 'examVersions', `${examId}__v${idVersion}`), {
-    examId, version: n, changeNote: 'Rules test publish', publishedBy: by(versionAuthor),
+    examId, version: n, snapshot, changeNote: 'Rules test publish', publishedBy: versionAuthor,
   });
   return b.commit();
 };
@@ -46,8 +54,19 @@ describe('publishing', () => {
   });
 
   it("blocks naming someone else as the author", async () => {
-    await assertFails(publishBatch(as(env, BLAKE), BLAKE, { author: AVERY }));
-    await assertFails(publishBatch(as(env, BLAKE), BLAKE, { versionAuthor: AVERY }));
+    await assertFails(publishBatch(as(env, BLAKE), BLAKE, { author: by(AVERY) }));
+    await assertFails(publishBatch(as(env, BLAKE), BLAKE, { versionAuthor: by(AVERY) }));
+  });
+
+  it("blocks recording a different name or email in History than the supervisor list has", async () => {
+    await assertFails(publishBatch(as(env, BLAKE), BLAKE, { versionAuthor: { ...by(BLAKE), name: 'Avery Lead' } }));
+    await assertFails(publishBatch(as(env, BLAKE), BLAKE, { author: { ...by(BLAKE), name: 'Avery Lead' } }));
+    await assertFails(publishBatch(as(env, BLAKE), BLAKE, { versionAuthor: { ...by(BLAKE), email: 'avery.lead@example.org' } }));
+  });
+
+  it('blocks a History copy that differs from what went live', async () => {
+    await assertFails(publishBatch(as(env, AVERY), AVERY, { snapshot: { ...CONTENT, scheduling: ['Something else'] } }));
+    await assertFails(publishBatch(as(env, AVERY), AVERY, { snapshot: { ...CONTENT, aliases: [] } }));
   });
 
   it('blocks changing an exam without writing its version record', async () => {
@@ -116,6 +135,15 @@ describe('supervisor list', () => {
     const db = as(env, AVERY);
     await assertSucceeds(setDoc(doc(db, 'supervisors', 'new@example.org'), rec('new@example.org')));
     await assertSucceeds(setDoc(doc(db, 'supervisors', 'blake.sup@example.org'), rec('blake.sup@example.org', { active: false })));
+  });
+
+  it('lets supervisors read the list, and everyone else only their own entry', async () => {
+    await assertSucceeds(getDocs(collection(as(env, BLAKE), 'supervisors')));
+    await assertFails(getDocs(collection(as(env, VIEWER), 'supervisors')));
+    await assertFails(getDoc(doc(as(env, VIEWER), 'supervisors', 'avery.lead@example.org')));
+    await assertSucceeds(getDoc(doc(as(env, VIEWER), 'supervisors', 'viewer@example.org')));
+    await assertSucceeds(getDoc(doc(as(env, FORMER), 'supervisors', 'former.sup@example.org')));
+    await assertFails(getDocs(collection(as(env, FORMER), 'supervisors')));
   });
 
   it('blocks regular supervisors and others from changing the list', async () => {

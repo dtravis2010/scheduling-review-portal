@@ -30,7 +30,8 @@ const IntendedForm = ({ conflict, onDone }) => {
     <form className="edit-form restore-form" onSubmit={submit}>
       <div className="field">
         <label htmlFor={id}>Why is this correct as it is?</label>
-        <textarea id={id} rows={2} value={reason} onChange={(e) => setReason(e.target.value)} />
+        <p className="field-help" id={`${id}-help`}>Shown in History. At least {MIN_CHANGE_NOTE} characters.</p>
+        <textarea id={id} rows={2} value={reason} onChange={(e) => setReason(e.target.value)} aria-describedby={`${id}-help`} />
       </div>
       {error && <p className="form-message form-message--error" role="alert">{error}</p>}
       <div className="action-row">
